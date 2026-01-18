@@ -83,8 +83,14 @@ class ZeroHoldSmartShipping {
 
 		// Initialize Admin Pages
 		if ( is_admin() ) {
+			error_log( 'ZSS DEBUG: Admin detected, registering menu...' );
 			require_once __DIR__ . '/Core/Admin/PincodeImportPage.php';
-			add_action( 'admin_menu', [ \Zerohold\Shipping\Admin\PincodeImportPage::class, 'register' ] );
+			add_action( 'admin_menu', function() {
+				error_log( 'ZSS DEBUG: admin_menu hook fired!' );
+				\Zerohold\Shipping\Admin\PincodeImportPage::register();
+			} );
+		} else {
+			error_log( 'ZSS DEBUG: Not admin request.' );
 		}
 	}
 
