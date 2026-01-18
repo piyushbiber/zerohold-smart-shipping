@@ -88,7 +88,33 @@ class ShiprocketAdapter implements PlatformInterface {
 		return $response;
 	}
 
-	public function getRates( $shipment ) { return []; }
+	public function getRateQuote( $origin_pincode, $destination_pincode, $weight, $cod = 0 ) {
+		// Authenticate first
+		$auth_response = $this->client->login();
+
+		if ( is_wp_error( $auth_response ) || ! isset( $auth_response['token'] ) ) {
+			return $auth_response;
+		}
+
+		$query_args = [
+			'pickup_postcode'   => $origin_pincode,
+			'delivery_postcode' => $destination_pincode,
+			'weight'            => $weight,
+			'cod'               => $cod,
+		];
+
+		return $this->client->get( 'courier/serviceability/', $query_args );
+	}
+
+	public function getRates( $shipment ) {
+		return $this->getRateQuote(
+			$shipment->from_pincode,
+			$shipment->to_pincode,
+			$shipment->weight,
+			( $shipment->payment_mode === 'COD' ? 1 : 0 )
+		);
+	}
+
 	public function generateAWB( $shipment_id ) {
 		$payload = [
 			'shipment_id' => $shipment_id,
