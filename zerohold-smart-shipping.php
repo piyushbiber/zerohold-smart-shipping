@@ -80,6 +80,12 @@ class ZeroHoldSmartShipping {
 
 		// Initialize Platforms (for testing auth)
 		new Platforms\ShiprocketAdapter();
+
+		// Initialize Admin Pages
+		if ( is_admin() ) {
+			require_once __DIR__ . '/Core/Admin/PincodeImportPage.php';
+			add_action( 'admin_menu', [ 'PincodeImportPage', 'register' ] );
+		}
 	}
 
 	public function run() {
