@@ -1,0 +1,8 @@
+# WordPress plugin gitignore
+node_modules/
+vendor/
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
+.git/
