@@ -1,5 +1,11 @@
 <?php
 
+namespace Zerohold\Shipping\Admin;
+
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
 /**
  * Admin Page: Pincode Import
  * Allows administrators to upload a CSV file to populate the pincode map table.
