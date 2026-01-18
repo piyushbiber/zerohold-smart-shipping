@@ -103,16 +103,26 @@ class ShiprocketAdapter implements PlatformInterface {
 			'cod'               => $cod,
 		];
 
-		return $this->client->get( 'courier/serviceability/', $query_args );
+		$response = $this->client->get( 'courier/serviceability/', $query_args );
+
+		if ( is_wp_error( $response ) ) {
+			return $response;
+		}
+
+		// Use the normalizer to return a unified model
+		$normalizer = new \Zerohold\Shipping\Core\RateNormalizer();
+		return $normalizer->normalizeShiprocket( $response );
 	}
 
 	public function getRates( $shipment ) {
-		return $this->getRateQuote(
+		$quote = $this->getRateQuote(
 			$shipment->from_pincode,
 			$shipment->to_pincode,
 			$shipment->weight,
 			( $shipment->payment_mode === 'COD' ? 1 : 0 )
 		);
+
+		return [ 'shiprocket' => $quote ];
 	}
 
 	public function generateAWB( $shipment_id ) {

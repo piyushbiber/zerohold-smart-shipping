@@ -7,5 +7,19 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 class RateQuote {
-	// General rate quote structure
+	public $base;
+	public $zone;
+	public $edd;
+	public $courier;
+	public $vendor_share;
+	public $retailer_share;
+
+	public function __construct( $data = [] ) {
+		foreach ( $data as $key => $value ) {
+			if ( property_exists( $this, $key ) ) {
+				$this->$key = $value;
+			}
+		}
+	}
 }
+

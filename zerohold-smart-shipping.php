@@ -88,6 +88,9 @@ class ZeroHoldSmartShipping {
 }
 
 function zss_init() {
+	// Initialize Migration Runner
+	Core\MigrationRunner::run();
+
 	$plugin = new ZeroHoldSmartShipping();
 	$plugin->run();
 }

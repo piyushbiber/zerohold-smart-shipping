@@ -7,7 +7,15 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 class RateSelector {
-	public function selectBestRate( array $rates ) {
-		// Selection logic
+	/**
+	 * Selects the best available rate.
+	 * 
+	 * @param array $quotes
+	 * @return mixed
+	 */
+	public function selectBestRate( array $quotes ) {
+		// For now: return shiprocket as the primary choice
+		return isset( $quotes['shiprocket'] ) ? $quotes['shiprocket'] : reset( $quotes );
 	}
 }
+
