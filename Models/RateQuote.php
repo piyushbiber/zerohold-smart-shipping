@@ -11,6 +11,7 @@ class RateQuote {
 	public $zone;
 	public $edd;
 	public $courier;
+	public $platform; // 'shiprocket' or 'nimbus'
 	public $vendor_share;
 	public $retailer_share;
 

@@ -38,7 +38,12 @@ class RateNormalizer {
 	 * @return RateQuote
 	 */
 	public function normalizeNimbus( $response ) {
-		// Future implementation
-		return new RateQuote([]);
+		return new RateQuote([
+			'base'     => isset($response['freight_charges']) ? $response['freight_charges'] : 0,
+			'zone'     => isset($response['zone']) ? $response['zone'] : '', // Zone resolver if needed later
+			'edd'      => isset($response['estimated_delivery_days']) ? $response['estimated_delivery_days'] : '',
+			'courier'  => isset($response['courier_name']) ? $response['courier_name'] : 'Nimbus',
+			'platform' => 'nimbus', // Explicitly tag platform
+		]);
 	}
 }
