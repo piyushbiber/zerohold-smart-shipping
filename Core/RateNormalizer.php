@@ -24,7 +24,7 @@ class RateNormalizer {
 	public function normalizeShiprocket( $response ) {
 		// This assumes Shiprocket response format
 		return new RateQuote([
-			'base'    => isset($response['freight_charge']) ? $response['freight_charge'] : 0,
+			'base'    => isset($response['freight_charge']) ? $response['freight_charge'] : ( isset($response['rate']) ? $response['rate'] : 0 ),
 			'zone'    => isset($response['zone']) ? $response['zone'] : '',
 			'edd'     => isset($response['edd']) ? $response['edd'] : '',
 			'courier'  => isset($response['courier_name']) ? $response['courier_name'] : 'Shiprocket',

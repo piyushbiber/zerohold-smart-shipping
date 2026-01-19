@@ -104,6 +104,8 @@ class ShiprocketAdapter implements PlatformInterface {
 		];
 
 		$response = $this->client->get( 'courier/serviceability/', $query_args );
+		
+		error_log( 'ZSS DEBUG: Shiprocket raw serviceability response: ' . print_r( $response, true ) );
 
 		if ( is_wp_error( $response ) ) {
 			return $response;
@@ -121,6 +123,8 @@ class ShiprocketAdapter implements PlatformInterface {
 			$shipment->weight,
 			( $shipment->payment_mode === 'COD' ? 1 : 0 )
 		);
+		
+		error_log( 'ZSS DEBUG: Shiprocket getRateQuote result: ' . print_r( $quote, true ) );
 
 		return [ 'shiprocket' => $quote ];
 	}
