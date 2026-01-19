@@ -41,6 +41,7 @@ class Shipment {
 
 	// ============= Order-Level Info =============
 	public $order_id;
+	public $order_date; // Added for Shiprocket validation
 	public $declared_value;
 	public $payment_mode;
 

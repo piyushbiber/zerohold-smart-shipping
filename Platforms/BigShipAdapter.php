@@ -225,11 +225,19 @@ class BigShipAdapter implements PlatformInterface {
 		// Endpoint: POST /warehouse/add
 		
 		// Map Fields
+		// Map Fields
+		
+		// Fix: Sanitize Warehouse Name (Alphanumeric + space + safe chars)
+		$safe_name = preg_replace( '/[^A-Za-z0-9 .,-\/]/', '', 'Vendor_' . $shipment->vendor_id );
+		
+		// Fix: Truncate Address (Max 50 chars)
+		$address_1 = substr( trim( $shipment->from_address1 ), 0, 50 );
+
 		$payload = [
-			'warehouse_name' => 'Vendor_' . $shipment->vendor_id,
+			'warehouse_name' => $safe_name,
 			'email'          => 'vendor@example.com',
 			'contact_number_primary' => $shipment->from_phone ?: '9876543210',
-			'address_line1'  => $shipment->from_address1,
+			'address_line1'  => $address_1,
 			'address_line2'  => $shipment->from_address2,
 			'address_pincode' => $shipment->from_pincode ?? '110001',
 			'city'           => $shipment->from_city,

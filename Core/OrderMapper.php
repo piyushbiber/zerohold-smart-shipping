@@ -55,6 +55,7 @@ class OrderMapper {
 
 		// ============= Order-Level Info =============
 		$shipment->order_id       = $order->get_id();
+		$shipment->order_date     = $order->get_date_created() ? $order->get_date_created()->date( 'Y-m-d H:i' ) : current_time( 'Y-m-d H:i' );
 		$shipment->declared_value = $order->get_total();
 		$shipment->payment_mode   = 'Prepaid';
 

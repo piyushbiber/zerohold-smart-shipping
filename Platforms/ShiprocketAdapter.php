@@ -46,6 +46,7 @@ class ShiprocketAdapter implements PlatformInterface {
 
 		$payload = [
 			'order_id'              => $shipment->order_id . '-' . time(), // unique ID
+			'order_date'            => $shipment->order_date, // Fix: Use Actual Order Date
 			'pickup_location'       => $warehouse_id,
 			'billing_customer_name' => $shipment->to_first_name ?: 'Retailer',
 			'billing_last_name'     => $shipment->to_last_name ?: '-',
