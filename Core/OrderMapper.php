@@ -15,7 +15,9 @@ class OrderMapper {
 		$shipment = new Shipment();
 
 		// ============= Retailer (Delivery) =============
-		$shipment->to_contact  = trim( $order->get_shipping_first_name() . ' ' . $order->get_shipping_last_name() );
+		$shipment->to_first_name = $order->get_shipping_first_name();
+		$shipment->to_last_name  = $order->get_shipping_last_name();
+		$shipment->to_contact  = trim( $shipment->to_first_name . ' ' . $shipment->to_last_name );
 		$shipment->to_store    = $order->get_meta( '_shipping_store_name' ); // optional
 		$shipment->to_phone    = $order->get_meta( '_shipping_phone' );
 		$shipment->to_address1 = $order->get_shipping_address_1();

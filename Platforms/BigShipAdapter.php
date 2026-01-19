@@ -228,10 +228,10 @@ class BigShipAdapter implements PlatformInterface {
 		$payload = [
 			'warehouse_name' => 'Vendor_' . $shipment->vendor_id,
 			'email'          => 'vendor@example.com',
-			'mobile'         => $shipment->from_phone ?: '9876543210',
+			'contact_number_primary' => $shipment->from_phone ?: '9876543210',
 			'address_line1'  => $shipment->from_address1,
 			'address_line2'  => $shipment->from_address2,
-			'pincode'        => $shipment->from_pincode ?? '110001',
+			'address_pincode' => $shipment->from_pincode ?? '110001',
 			'city'           => $shipment->from_city,
 			'state'          => $shipment->from_state,
 		];

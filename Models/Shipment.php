@@ -17,6 +17,8 @@ class Shipment {
 
 	// ============= Retailer (Delivery) =============
 	public $to_contact;
+	public $to_first_name;
+	public $to_last_name;
 	public $to_store;
 	public $to_phone;
 	public $to_address1;

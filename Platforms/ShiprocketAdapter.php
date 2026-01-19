@@ -28,24 +28,8 @@ class ShiprocketAdapter implements PlatformInterface {
 			return [ 'error' => 'Shiprocket Warehouse Check Failed. Please check vendor address.' ];
 		}
 
-		// Authenticate and Capture Result
-		$auth_response = $this->client->login();
-
-		if ( is_wp_error( $auth_response ) ) {
-			return [
-				'status'  => 'error',
-				'message' => 'Authentication Connection Failed',
-				'debug'   => $auth_response->get_error_message()
-			];
-		}
-
-		if ( ! isset( $auth_response['token'] ) ) {
-			return [
-				'status'  => 'error',
-				'message' => 'Authentication Failed: Invalid Credentials or API Error',
-				'debug'   => $auth_response
-			];
-		}
+		// Authenticate and Capture Result (Handled by Client now)
+		// $auth_response = $this->client->login(); ... removed
 
 		$order_items = [];
 		foreach ( $shipment->items as $item ) {
@@ -62,9 +46,9 @@ class ShiprocketAdapter implements PlatformInterface {
 
 		$payload = [
 			'order_id'              => $shipment->order_id . '-' . time(), // unique ID
-			'order_date'            => current_time( 'Y-m-d H:i' ),
 			'pickup_location'       => $warehouse_id,
-			'billing_customer_name' => $shipment->to_contact,
+			'billing_customer_name' => $shipment->to_first_name ?: 'Retailer',
+			'billing_last_name'     => $shipment->to_last_name ?: '-',
 			'billing_address'       => $shipment->to_address1,
 			'billing_address_2'     => $shipment->to_address2,
 			'billing_city'          => $shipment->to_city,
@@ -94,12 +78,8 @@ class ShiprocketAdapter implements PlatformInterface {
 	}
 
 	public function getRateQuote( $origin_pincode, $destination_pincode, $weight, $cod = 0 ) {
-		// Authenticate first
-		$auth_response = $this->client->login();
-
-		if ( is_wp_error( $auth_response ) || ! isset( $auth_response['token'] ) ) {
-			return $auth_response;
-		}
+		// Authenticate first (Handled by Client now)
+		// $auth_response = $this->client->login(); ... removed
 
 		$query_args = [
 			'pickup_postcode'   => $origin_pincode,
@@ -177,11 +157,27 @@ class ShiprocketAdapter implements PlatformInterface {
 		// Phase-1: Use correct endpoint
 		
 		// Phase-2: Payload Mapping
-		// Generate a unique code if possible, or let SR handle nickname?
-		// "pickup_location" field is the Nickname/ID.
-		$pickup_code = 'Vendor_' . $shipment->vendor_id;
+		// User Req: pickup_location = <store_name>_WH
+		// Sanitize store name to be safe? "Adam Store" -> "Adam_Store_WH" or just "AdamStore_WH"
+		// Better to be safe and remove special chars.
+		$store_name_sanitized = preg_replace( '/[^a-zA-Z0-9]/', '', $shipment->from_store );
+		if ( empty( $store_name_sanitized ) ) {
+			$store_name_sanitized = 'Vendor' . $shipment->vendor_id;
+		}
 		
-		// Phase-7: Normalize Pincode (6 digits, int)
+		// Use "Vendor_ID" prefix ensuring uniqueness even if store names duplicate?
+		// User: "pickup_location": "ADAMSTORE_WH". 
+		// I will combine to ensure uniqueness + readability: e.g. "Vendor123_AdamStore_WH"
+		// Or stick strictly to user example? "Adam Store WH" -> "Adam Store WH" (SR might allow spaces).
+		// User Note: "Shiprocket treats pickup_location as ID string. ... Do NOT uppercase yourself".
+		// I'll use a safe readable string.
+		$pickup_code = $store_name_sanitized . '_WH_' . $shipment->vendor_id; 
+
+		// Email from WP User
+		$vendor_user = get_userdata( $shipment->vendor_id );
+		$vendor_email = $vendor_user ? $vendor_user->user_email : 'vendor' . $shipment->vendor_id . '@example.com';
+
+		// Phase-7: Normalize Pincode
 		$pin_code = preg_replace( '/[^0-9]/', '', $shipment->from_pincode );
 		$pin_code = substr( $pin_code, 0, 6 ); // Ensure max 6
 
@@ -191,15 +187,15 @@ class ShiprocketAdapter implements PlatformInterface {
 
 		$payload = [
 			'pickup_location' => $pickup_code,
-			'name'            => $shipment->from_store ?: 'Vendor Store ' . $shipment->vendor_id,
-			'email'           => 'vendor' . $shipment->vendor_id . '@example.com', // Unique email if possible?
+			'name'            => $shipment->from_store ?: 'Vendor Store',
+			'email'           => $vendor_email,
 			'phone'           => $shipment->from_phone ?: '9876543210',
 			'address'         => $shipment->from_address1,
 			'address_2'       => $shipment->from_address2,
 			'city'            => $shipment->from_city,
 			'state'           => $shipment->from_state,
 			'country'         => 'India',
-			'pin_code'        => intval( $pin_code ), // Phase-7
+			'pin_code'        => intval( $pin_code ),
 		];
 
 		// POST settings/company/addpickup

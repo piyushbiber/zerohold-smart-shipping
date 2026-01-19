@@ -79,6 +79,14 @@ class ShiprocketClient {
 	 * @return array|\WP_Error
 	 */
 	public function get( $endpoint, $query_args = [], $auth = true ) {
+		// Auto-refresh token if needed
+		if ( $auth ) {
+			$this->token = $this->getValidToken();
+			if ( is_wp_error( $this->token ) ) {
+				return $this->token;
+			}
+		}
+
 		$url = $this->baseUrl . $endpoint;
 
 		if ( ! empty( $query_args ) ) {
@@ -115,6 +123,14 @@ class ShiprocketClient {
 	 * @return array|\WP_Error
 	 */
 	public function post( $endpoint, $data, $auth = true ) {
+		// Auto-refresh token if needed
+		if ( $auth ) {
+			$this->token = $this->getValidToken();
+			if ( is_wp_error( $this->token ) ) {
+				return $this->token;
+			}
+		}
+
 		$url = $this->baseUrl . $endpoint;
 
 		$args = [
@@ -137,5 +153,41 @@ class ShiprocketClient {
 
 		$body = wp_remote_retrieve_body( $response );
 		return json_decode( $body, true );
+	}
+
+	/**
+	 * Retrieves a valid auth token.
+	 * Auto-logs in if token is missing or expired.
+	 *
+	 * @return string|\WP_Error
+	 */
+	private function getValidToken() {
+		// 1. Check Memory
+		if ( ! empty( $this->token ) ) {
+			return $this->token;
+		}
+
+		// 2. Check Database (Transient)
+		$stored_token = get_transient( 'zh_shiprocket_token' );
+		if ( $stored_token ) {
+			$this->token = $stored_token;
+			return $this->token;
+		}
+
+		// 3. Re-Login
+		$login_response = $this->login();
+		
+		if ( is_wp_error( $login_response ) ) {
+			return $login_response;
+		}
+
+		if ( isset( $login_response['token'] ) ) {
+			$this->token = $login_response['token'];
+			// Store for 24 hours (usually valid for 10 days, but 24h is safe)
+			set_transient( 'zh_shiprocket_token', $this->token, 24 * HOUR_IN_SECONDS );
+			return $this->token;
+		}
+
+		return new \WP_Error( 'sr_auth_failed', 'Shiprocket Login Failed (No Token)' );
 	}
 }

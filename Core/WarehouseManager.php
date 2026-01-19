@@ -27,7 +27,7 @@ class WarehouseManager {
 		$adapter  = null;
 
 		if ( $platform === 'shiprocket' ) {
-			$meta_key = '_sr_warehouse_id';
+			$meta_key = '_sr_pickup_location';
 			$adapter  = new ShiprocketAdapter();
 		} elseif ( $platform === 'bigship' ) {
 			$meta_key = 'zh_bs_warehouse_id';

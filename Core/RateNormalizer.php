@@ -22,12 +22,46 @@ class RateNormalizer {
 	 * @return RateQuote
 	 */
 	public function normalizeShiprocket( $response ) {
-		// This assumes Shiprocket response format
+		// Phase-6: Rate Normalization Fix (Pick Lowest)
+		// API Response -> data -> available_courier_companies (Array)
+		
+		$couriers = $response['data']['available_courier_companies'] ?? [];
+		
+		if ( empty( $couriers ) || ! is_array( $couriers ) ) {
+			// Fallback or error
+			return new RateQuote([
+				'base'     => 0, // Invalid
+				'platform' => 'shiprocket'
+			]);
+		}
+
+		$lowest_rate = null;
+		$winner      = null;
+
+		foreach ( $couriers as $courier ) {
+			$rate = isset( $courier['freight_charge'] ) ? floatval( $courier['freight_charge'] ) : ( isset( $courier['rate'] ) ? floatval( $courier['rate'] ) : 0 );
+			
+			// Phase-7: Reject Zero Rates
+			if ( $rate <= 0 ) {
+				continue;
+			}
+
+			if ( is_null( $lowest_rate ) || $rate < $lowest_rate ) {
+				$lowest_rate = $rate;
+				$winner      = $courier;
+			}
+		}
+
+		if ( ! $winner ) {
+			return new RateQuote([ 'base' => 0, 'platform' => 'shiprocket' ]);
+		}
+
 		return new RateQuote([
-			'base'    => isset($response['freight_charge']) ? $response['freight_charge'] : ( isset($response['rate']) ? $response['rate'] : 0 ),
-			'zone'    => isset($response['zone']) ? $response['zone'] : '',
-			'edd'     => isset($response['edd']) ? $response['edd'] : '',
-			'courier'  => isset($response['courier_name']) ? $response['courier_name'] : 'Shiprocket',
+			'base'     => $lowest_rate,
+			'zone'     => $winner['zone'] ?? '', // SR response usually has zone?
+			'edd'      => $winner['etd'] ?? $winner['edd'] ?? '',
+			'courier'  => $winner['courier_name'] ?? 'Shiprocket',
+			'courier_id'=> $winner['courier_company_id'] ?? '', // Useful if we need specific execution?
 			'platform' => 'shiprocket',
 		]);
 	}
