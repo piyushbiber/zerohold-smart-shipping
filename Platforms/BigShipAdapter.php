@@ -27,7 +27,7 @@ class BigShipAdapter implements PlatformInterface {
 		// Endpoint: POST /api/order/add/single
 		
 		// Ensure Warehouse Exists
-		$warehouse_id = $this->ensureWarehouse( $shipment );
+		$warehouse_id = \Zerohold\Shipping\Core\WarehouseManager::ensureWarehouse( $shipment, 'bigship' );
 		if ( ! $warehouse_id ) {
 			return new \WP_Error( 'bigship_warehouse', 'Failed to retrieve BigShip Warehouse ID' );
 		}
@@ -216,52 +216,33 @@ class BigShipAdapter implements PlatformInterface {
 	}
 
 	/**
-	 * Helper: Ensure BigShip Warehouse Exists
+	 * Creates a warehouse on BigShip.
 	 * 
-	 * Checks transient first, then tries to fetch/create.
-	 * 
-	 * @param object $shipment Used for contact details if creation needed.
-	 * @return string|false
+	 * @param \Zerohold\Shipping\Models\Shipment $shipment
+	 * @return string|WP_Error Warehouse ID
 	 */
-	private function ensureWarehouse( $shipment ) {
-		// 1. Check Cache
-		$id = get_transient( 'zh_bigship_warehouse_id' );
-		if ( $id ) {
-			return $id;
-		}
-
-		// 2. Try to List Warehouses (Optional, user didn't give endpoint, assuming manual ID for now?)
-		// But user said: POST /warehouse/add -> store ID
-		// So let's try to CREATE one.
-		// NOTE: API likely prevents duplicate names. We try to create "Main Store".
-		// If fails (already exists), maybe message has ID? 
-		// Or we need a list endpoint.
-		// For MVP, if we can't List, we try Create.
+	public function createWarehouse( $shipment ) {
+		// Endpoint: POST /warehouse/add
 		
+		// Map Fields
 		$payload = [
-			'warehouse_name' => 'Main Store',
-			'email'          => 'piyushbiber@gmail.com', // fallback
-			'mobile'         => '9876543210', // fallback or from vendor config?
-			'address_line1'  => 'Vendor Address',
-			'address_line2'  => '',
+			'warehouse_name' => 'Vendor_' . $shipment->vendor_id,
+			'email'          => 'vendor@example.com',
+			'mobile'         => $shipment->from_phone ?: '9876543210',
+			'address_line1'  => $shipment->from_address1,
+			'address_line2'  => $shipment->from_address2,
 			'pincode'        => $shipment->from_pincode ?? '110001',
-			'city'           => 'New Delhi', // approximation if from_pincode used
-			'state'          => 'Delhi',
+			'city'           => $shipment->from_city,
+			'state'          => $shipment->from_state,
 		];
 
 		$response = $this->client->post( 'warehouse/add', $payload );
 		
 		if ( ! is_wp_error( $response ) && isset( $response['data']['pickup_address_id'] ) ) {
-			$id = $response['data']['pickup_address_id'];
-			set_transient( 'zh_bigship_warehouse_id', $id, 24 * HOUR_IN_SECONDS );
-			return $id;
+			return $response['data']['pickup_address_id'];
 		} else {
-			// If creation failed (e.g. already exists), we likely can't get the ID easily without a List API.
-			// User didn't provide List API dump.
-			// FALLBACK: Use provided sample ID or log error.
 			error_log( 'ZSS ERROR: BigShip Warehouse Create Failed: ' . print_r( $response, true ) );
-			// Last resort hardcode if user provided one? No.
-			return false;
+			return new \WP_Error( 'bigship_warehouse_error', 'Failed to create BigShip warehouse' );
 		}
 	}
 }

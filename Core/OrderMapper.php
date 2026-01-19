@@ -46,7 +46,10 @@ class OrderMapper {
 		$shipment->from_city     = $store['address']['city'] ?? '';
 		$shipment->from_state    = $store['address']['state'] ?? '';
 		$shipment->from_pincode  = $store['address']['zip'] ?? '';
+		$shipment->from_state    = $store['address']['state'] ?? '';
+		$shipment->from_pincode  = $store['address']['zip'] ?? '';
 		$shipment->from_country  = $store['address']['country'] ?? 'IN';
+		$shipment->vendor_id     = $vendor_id;
 
 		// ============= Order-Level Info =============
 		$shipment->order_id       = $order->get_id();
