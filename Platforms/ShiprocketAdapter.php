@@ -22,6 +22,12 @@ class ShiprocketAdapter implements PlatformInterface {
 	}
 
 	public function createOrder( $shipment ) {
+		// Ensure warehouse exists (Strict)
+		$warehouse_id = \Zerohold\Shipping\Core\WarehouseManager::ensureWarehouse( $shipment, 'shiprocket' );
+		if ( ! $warehouse_id ) {
+			return [ 'error' => 'Shiprocket Warehouse Check Failed. Please check vendor address.' ];
+		}
+
 		// Authenticate and Capture Result
 		$auth_response = $this->client->login();
 
@@ -57,12 +63,8 @@ class ShiprocketAdapter implements PlatformInterface {
 		$payload = [
 			'order_id'              => $shipment->order_id . '-' . time(), // unique ID
 			'order_date'            => current_time( 'Y-m-d H:i' ),
-			'order_id'              => $shipment->order_id . '-' . time(), // unique ID
-			'order_date'            => current_time( 'Y-m-d H:i' ),
-			'pickup_location'       => \Zerohold\Shipping\Core\WarehouseManager::ensureWarehouse( $shipment, 'shiprocket' ) ?: 'Primary',
+			'pickup_location'       => $warehouse_id,
 			'billing_customer_name' => $shipment->to_contact,
-			'billing_customer_name' => $shipment->to_contact,
-			'billing_last_name'     => '',
 			'billing_address'       => $shipment->to_address1,
 			'billing_address_2'     => $shipment->to_address2,
 			'billing_city'          => $shipment->to_city,
@@ -164,53 +166,81 @@ class ShiprocketAdapter implements PlatformInterface {
 	 * @param \Zerohold\Shipping\Models\Shipment $shipment
 	 * @return string|WP_Error Pickup Location Name (ID)
 	 */
+	/**
+	 * Creates a pickup location (warehouse) on Shiprocket.
+	 * 
+	 * @param \Zerohold\Shipping\Models\Shipment $shipment
+	 * @return string|WP_Error Pickup Location Name (ID)
+	 */
 	public function createWarehouse( $shipment ) {
-		// Endpoint: /settings/pickup-locations/add
-		// Required: pickup_location, name, email, phone, address, city, state, country, pin_code
+		// Endpoint: POST /settings/company/addpickup
+		// Phase-1: Use correct endpoint
 		
-		// Unique name for this vendor to avoid collision?
-		// SR Pickup Locations are identified by "pickup_location" (nickname).
-		// We can use "Vendor_{ID}_{ShortName}" or just "Vendor_{ID}".
+		// Phase-2: Payload Mapping
+		// Generate a unique code if possible, or let SR handle nickname?
+		// "pickup_location" field is the Nickname/ID.
 		$pickup_code = 'Vendor_' . $shipment->vendor_id;
+		
+		// Phase-7: Normalize Pincode (6 digits, int)
+		$pin_code = preg_replace( '/[^0-9]/', '', $shipment->from_pincode );
+		$pin_code = substr( $pin_code, 0, 6 ); // Ensure max 6
+
+		if ( strlen( $pin_code ) < 6 ) {
+			return new \WP_Error( 'sr_warehouse_error', 'Invalid Pincode for Shiprocket Warehouse: ' . $shipment->from_pincode );
+		}
 
 		$payload = [
 			'pickup_location' => $pickup_code,
-			'name'            => $shipment->from_store ?: 'Vendor Store',
-			'email'           => 'vendor@example.com', // Dokan might store this, mapping from user needed if not in address
+			'name'            => $shipment->from_store ?: 'Vendor Store ' . $shipment->vendor_id,
+			'email'           => 'vendor' . $shipment->vendor_id . '@example.com', // Unique email if possible?
 			'phone'           => $shipment->from_phone ?: '9876543210',
 			'address'         => $shipment->from_address1,
 			'address_2'       => $shipment->from_address2,
 			'city'            => $shipment->from_city,
 			'state'           => $shipment->from_state,
-			'country'         => 'India', // SR specific
-			'pin_code'        => $shipment->from_pincode,
+			'country'         => 'India',
+			'pin_code'        => intval( $pin_code ), // Phase-7
 		];
 
-		$response = $this->client->post( 'settings/pickup-locations/add', $payload );
+		// POST settings/company/addpickup
+		$response = $this->client->post( 'settings/company/addpickup', $payload );
 
-		error_log( 'ZSS DEBUG: Shiprocket createWarehouse response: ' . print_r( $response, true ) );
+		error_log( 'ZSS DEBUG: Shiprocket AddPickup Response: ' . print_r( $response, true ) );
 
 		if ( is_wp_error( $response ) ) {
+			// Check if error is "already exists"
+			// SR might return 422 with message.
+			// Ideally we assume failure unless we can recover code.
 			return $response;
 		}
-		
-		// If success, it might return success: true. 
-		// Or if exists, it returns error but we can use the code.
-		// Docs say: 422 if exists.
-		
-		// If exists: "pickup_location already exists".
+
+		// Phase-3: Extract ID
+		// Check for success address object
 		if ( isset( $response['success'] ) && $response['success'] ) {
-			return $pickup_code;
+			// Valid creation
+			// Response format check: { "address": { "pickup_location": "..." } } ?
+			if ( isset( $response['address']['pickup_location'] ) ) {
+				return $response['address']['pickup_location'];
+			}
+			// Sometimes just in root?
+			if ( isset( $response['pickup_location'] ) ) {
+				return $response['pickup_location'];
+			}
 		}
 
-		// Handle "already exists" logic if needed, but for now user logic is:
-		// "if (!warehouseExistsForVendor) -> create".
-		// Since we check user_meta first in Manager, we only call this if DB is empty.
-		// If SR says exists, we should probably save it to DB anyway.
-		if ( isset( $response['message'] ) && stripos( $response['message'], 'already exists' ) !== false ) {
-			return $pickup_code;
+		// Error Handling / Existence Check
+		// If "already exists", we might want to assume $pickup_code is valid?
+		// BUT User Phase-4 says: "If warehouse not created -> fail and log error, NOT fallback."
+		
+		// However, if we tried to create 'Vendor_123' and it says "Already exists", 
+		// that implies 'Vendor_123' IS the valid ID.
+		// So we should return it safe.
+		if ( isset( $response['message'] ) ) {
+			if ( stripos( $response['message'], 'exists' ) !== false || stripos( $response['message'], 'taken' ) !== false ) {
+				return $pickup_code;
+			}
 		}
 
-		return $pickup_code; // Best effort return code if we think it worked or existed
+		return new \WP_Error( 'sr_warehouse_failed', 'Failed to create Shiprocket Warehouse: ' . print_r( $response, true ) );
 	}
 }
