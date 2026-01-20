@@ -58,6 +58,44 @@ class BigShipAdapter implements PlatformInterface {
         $payment_type = 'Prepaid'; 
         // If COD, we need to set collectable amounts.
 
+        // Logic for Name Validation (Min 3 chars, Max 25 chars)
+        $full_name_parts = explode( ' ', trim( $shipment->to_contact ) );
+        $fname = array_shift( $full_name_parts );
+        $lname = implode( ' ', $full_name_parts );
+
+        // Fallback for empty last name
+        if ( empty( $lname ) ) {
+            $lname = 'Customer'; 
+        }
+
+        // Clean and Pad First Name
+        $fname = preg_replace( '/[^A-Za-z .]/', '', $fname ); // Alpha + dot + space
+        if ( strlen( $fname ) < 3 ) {
+            $fname = str_pad( $fname, 3, '.' );
+        }
+        $fname = substr( $fname, 0, 25 );
+
+        // Clean and Pad Last Name
+        $lname = preg_replace( '/[^A-Za-z .]/', '', $lname );
+        if ( strlen( $lname ) < 3 ) {
+            $lname = str_pad( $lname, 3, '.' );
+        }
+        $lname = substr( $lname, 0, 25 );
+
+
+        // Logic for Address Validation (Min 10 chars, Max 50 chars)
+        $addr1 = preg_replace( '/[^A-Za-z0-9 .,-\/]/', '', $shipment->to_address1 );
+        $addr1 = trim( $addr1 );
+        if ( strlen( $addr1 ) < 10 ) {
+            // Append generic text to meet minimum length
+            $addr1 .= ' Address...'; 
+        }
+        $addr1 = substr( $addr1, 0, 50 );
+
+        $addr2 = preg_replace( '/[^A-Za-z0-9 .,-\/]/', '', $shipment->to_address2 );
+        $addr2 = substr( trim( $addr2 ), 0, 50 );
+
+
         // Construct Payload
 		$payload = [
             'shipment_category' => 'b2c',
@@ -68,14 +106,14 @@ class BigShipAdapter implements PlatformInterface {
             ],
 
             'consignee_detail' => [
-                'first_name' => substr( $shipment->to_contact, 0, 25 ) ?: 'Customer',
-                'last_name'  => '.', // Mandatory field
+                'first_name' => $fname,
+                'last_name'  => $lname,
                 'company_name' => '',
                 'contact_number_primary' => $shipment->to_phone,
                 'email_id'   => 'customer@example.com', // Optional per docs?
                 'consignee_address' => [
-                    'address_line1'    => substr( $shipment->to_address1, 0, 50 ),
-                    'address_line2'    => substr( $shipment->to_address2, 0, 50 ),
+                    'address_line1'    => $addr1,
+                    'address_line2'    => $addr2,
                     'address_landmark' => '',
                     'pincode'          => $shipment->to_pincode,
                 ]
