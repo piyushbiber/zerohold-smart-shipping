@@ -287,6 +287,25 @@ class VendorActions {
 					update_post_meta( $order_id, '_zh_shiprocket_label_status', 1 );
 					// Store platform used for this order
 					update_post_meta( $order_id, '_zh_shipping_platform', $winner_platform );
+
+                    // BigShip Specific Storage
+                    if ( $winner_platform === 'bigship' ) {
+                         update_post_meta( $order_id, '_zh_shipment_platform', 'bigship' );
+                         update_post_meta( $order_id, '_zh_system_order_id', $response['shipment_id'] );
+                         
+                         if ( isset( $awb_response['awb_code'] ) ) {
+                             update_post_meta( $order_id, '_zh_awb', $awb_response['awb_code'] );
+                         }
+                         if ( isset( $awb_response['courier_name'] ) ) {
+                             update_post_meta( $order_id, '_zh_courier', $awb_response['courier_name'] );
+                         }
+                         if ( isset( $awb_response['courier_id'] ) ) {
+                             update_post_meta( $order_id, '_zh_courier_id', $awb_response['courier_id'] );
+                         }
+                         if ( isset( $label_response['label_url'] ) ) {
+                             update_post_meta( $order_id, '_zh_label_pdf_url', $label_response['label_url'] );
+                         }
+                    }
 					
 					error_log( 'ZSS AJAX: Meta updated, success' );
 
@@ -323,6 +342,11 @@ class VendorActions {
 
 		$order_id  = intval( $_GET['order_id'] );
 		$label_url = get_post_meta( $order_id, '_zh_shiprocket_label_url', true );
+        
+        // Fallback or override for BigShip
+        if ( ! $label_url ) {
+            $label_url = get_post_meta( $order_id, '_zh_label_pdf_url', true );
+        }
 
 		if ( ! $label_url ) {
 			wp_die( 'Label not found. Please generate the label first.' );

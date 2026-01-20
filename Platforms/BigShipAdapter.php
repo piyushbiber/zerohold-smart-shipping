@@ -280,13 +280,32 @@ class BigShipAdapter implements PlatformInterface {
 	}
 
 	public function generateAWB( $shipment_id ) {
-		// Might be automatic.
-		return [];
+		// BigShip Step 1: Generate AWB (shipment_data_id=1)
+        // Returns master_awb, courier_id, courier_name
+        
+		$response = $this->client->post( 'shipment/data', [
+			'shipment_data_id' => 1,
+			'system_order_id'  => $shipment_id
+		]);
+        
+        error_log( 'ZSS DEBUG: BigShip generateAWB raw response: ' . print_r( $response, true ) );
+        
+        if ( ! empty( $response['data']['master_awb'] ) ) {
+            return [
+                'awb_code'     => $response['data']['master_awb'],
+                'courier_name' => $response['data']['courier_name'] ?? '',
+                'courier_id'   => $response['data']['courier_id'] ?? '',
+                // Identifying success for VendorActions
+                'status'       => 'success' 
+            ];
+        }
+        
+		return [ 'error' => 'AWB Generation Failed', 'raw' => $response ];
 	}
 
 	public function getLabel( $shipment_id ) {
-		// POST /shipment/data?shipment_data_id=2&system_order_id=...
-        // Docs likely return the label link OR data.
+		// BigShip Step 2: Generate Label (shipment_data_id=2)
+        // Returns Base64 PDF in res_FileContent
         
 		$response = $this->client->post( 'shipment/data', [
 			'shipment_data_id' => 2,
@@ -295,28 +314,30 @@ class BigShipAdapter implements PlatformInterface {
         
         error_log( 'ZSS DEBUG: BigShip getLabel raw response: ' . print_r( $response, true ) );
         
-        $url = '';
-
-        // Case 1: Direct URL in 'data'
-        if ( isset( $response['data'] ) && filter_var( $response['data'], FILTER_VALIDATE_URL ) ) {
-            $url = $response['data'];
-        }
-        // Case 2: Nested key in 'data' (e.g. data['url'], data['label_url'])
-        elseif ( isset( $response['data'] ) && is_array( $response['data'] ) ) {
-             if ( isset( $response['data']['label_url'] ) ) {
-                 $url = $response['data']['label_url'];
-             } elseif ( isset( $response['data']['url'] ) ) {
-                 $url = $response['data']['url'];
-             } elseif ( isset( $response['data']['pdf'] ) ) {
-                 $url = $response['data']['pdf'];
-             }
+        if ( isset( $response['data']['res_FileContent'] ) ) {
+            $base64_content = $response['data']['res_FileContent'];
+            $decoded_pdf    = base64_decode( $base64_content );
+            
+            if ( $decoded_pdf ) {
+                $upload_dir = wp_upload_dir();
+                $base_dir   = $upload_dir['basedir'] . '/zh-labels';
+                $base_url   = $upload_dir['baseurl'] . '/zh-labels';
+                
+                if ( ! file_exists( $base_dir ) ) {
+                    wp_mkdir_p( $base_dir );
+                }
+                
+                // Filename: zh-label-{shipment_id}-{timestamp}.pdf
+                $filename = 'zh-label-' . $shipment_id . '-' . time() . '.pdf';
+                $file_path = $base_dir . '/' . $filename;
+                
+                if ( file_put_contents( $file_path, $decoded_pdf ) ) {
+                    return [ 'label_url' => $base_url . '/' . $filename ];
+                }
+            }
         }
         
-        if ( ! empty( $url ) ) {
-            return [ 'label_url' => $url ];
-        }
-        
-        return $response; // Return raw to let VendorActions handle it if standard mapping fails
+        return $response; 
 	}
 
 	public function track( $shipment_id ) {
