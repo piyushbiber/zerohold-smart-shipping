@@ -28,11 +28,14 @@ class RateSelector {
 
 		// Sort by price (base cost)
 		usort( $all_rates, function( $a, $b ) {
-			if ( $a->base == $b->base ) {
+            // Robust access: Support both Object (expected) and Array (fallback)
+            $base_a = is_object($a) ? $a->base : ( $a['base'] ?? 0 );
+            $base_b = is_object($b) ? $b->base : ( $b['base'] ?? 0 );
+
+			if ( $base_a == $base_b ) {
 				return 0;
 			}
-			return ( $a->base < $b->base ) ? -1 : 1;
-			return ( $a->base < $b->base ) ? -1 : 1;
+			return ( $base_a < $base_b ) ? -1 : 1;
 		} );
 
 		// Debug Logging (Temporary)
