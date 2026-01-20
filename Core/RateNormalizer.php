@@ -90,12 +90,19 @@ class RateNormalizer {
 	 */
 	public function normalizeBigShip( $response ) {
 		// Mapping based on common BigShip response fields
+	public function normalizeBigShip( $response ) {
+		// Mapping based on common BigShip response fields
 		// Fix: Map 'total_shipping_charges' (from debug logs) to base
 		$base = isset($response['total_shipping_charges']) ? (float) $response['total_shipping_charges'] : ( isset($response['freight_charges']) ? (float) $response['freight_charges'] : 0 );
 		$courier_name = isset($response['courier_name']) ? trim($response['courier_name']) : '';
 
+        // DEBUG: Inspect extraction
+        // error_log( "ZSS DEBUG: normalizeBigShip Input Keys: " . implode(',', array_keys($response)) );
+        // error_log( "ZSS DEBUG: Extracted Base: $base, Courier: $courier_name" );
+
         // Strict Filter: Reject invalid rates immediately
         if ( $base <= 0 || empty( $courier_name ) ) {
+            error_log( "ZSS DEBUG WARNING: Dropping Invalid BigShip Rate. Base: $base, Courier: $courier_name" );
             return null;
         }
 
