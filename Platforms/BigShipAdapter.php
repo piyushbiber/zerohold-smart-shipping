@@ -219,9 +219,23 @@ class BigShipAdapter implements PlatformInterface {
                 $rate_obj = new \Zerohold\Shipping\Models\RateQuote( $rate_obj );
             }
             
+            
             $rates[] = $rate_obj;
 		}
 		
+        // Filter out invalid rates (Zero price or empty courier)
+        $rates = array_filter( $rates, function( $r ) {
+            // Check object properties
+            if ( is_object( $r ) ) {
+                return ( $r->base > 0 && ! empty( $r->courier ) );
+            }
+            // Check array keys (defensive)
+            if ( is_array( $r ) ) {
+                return ( ( $r['base'] ?? 0 ) > 0 && ! empty( $r['courier'] ?? '' ) );
+            }
+            return false;
+        });
+
 		error_log( 'ZSS DEBUG: BigShip normalized rates count: ' . count( $rates ) );
 
 		return [ 'bigship' => $rates ];
