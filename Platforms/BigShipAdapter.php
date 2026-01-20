@@ -32,83 +32,108 @@ class BigShipAdapter implements PlatformInterface {
 			return new \WP_Error( 'bigship_warehouse', 'Failed to retrieve BigShip Warehouse ID' );
 		}
 		
-		$items = [];
+		// Map Items to "product_details" (inside box_details)
+		$product_details = [];
+        $total_items_qty = 0;
+        
 		foreach ( $shipment->items as $item ) {
-			$items[] = [
-				'name'          => $item['name'],
-				'sku'           => $item['sku'],
-				'quantity'      => $item['qty'],
-				'unit_price'    => $shipment->declared_value / max( 1, $shipment->qty ), 
-				'tax_rate'      => 0,
-				'hsn_code'      => '',
-				'discount'      => 0,
+            // Docs require product_category enum. 
+            // We'll hardcode "Others" or mapping if available. 
+            // Using "Others" as safest default from docs example.
+			$product_details[] = [
+				'product_category'     => 'Others', 
+				'product_sub_category' => 'General', // Required? Docs say string
+				'product_name'         => substr( $item['name'], 0, 50 ),
+				'product_quantity'     => (int) $item['qty'],
+				'each_product_invoice_amount'     => (float) $shipment->declared_value / max( 1, $shipment->qty ), // Per item price approximation
+				'each_product_collectable_amount' => 0, // Prepaid logic for now (see payment_type below)
+				'hsn'                  => '',
 			];
+            $total_items_qty += (int) $item['qty'];
 		}
 
+        // Logic for Payment Type
+        // Docs: Only 'COD' and 'Prepaid' allowed.
+        // Assuming Prepaid for now as per previous code.
+        $payment_type = 'Prepaid'; 
+        // If COD, we need to set collectable amounts.
+
+        // Construct Payload
 		$payload = [
-			'order_id'          => (string) $shipment->order_id, // Merchant Order ID
-			'order_date'        => current_time( 'Y-m-d H:i:s' ),
-			'channel'           => 'Custom',
-			'pickup_address_id' => (string) $warehouse_id,
-			// BigShip supposedly supports "warehouse_details" object inline if ID not known? 
-			// Or we must fetch warehouse list first? 
-			// For Phase-4 MVP, assume default or let user configure later.
-			// Let's try passing empty or dummy if allowed? Or omitting?
-			// Re-reading spec: "pickup_address_id": "<warehouse_id>"
-			// This is a blocker if we don't have it.
-			// Ideally we fetch list. But let's assume we need to pass something valid.
-			// Using random ID might fail. 
-			// Strategy: 'pickup_address_id' might be optional if we pass address? 
-			// Let's stick to spec.
-			
-			'payment_category'  => 'Prepaid',
-			'shipment_category' => 'B2C', // Essential
-			'invoice_value'     => $shipment->declared_value,
-			'total_amount'      => $shipment->declared_value,
-			'customer_details'  => [
-				'name'    => $shipment->to_contact,
-				'email'   => 'customer@example.com',
-				'mobile'  => $shipment->to_phone,
-				'address_line1' => $shipment->to_address1,
-				'address_line2' => $shipment->to_address2,
-				'pincode' => $shipment->to_pincode,
-				'city'    => $shipment->to_city,
-				'state'   => $shipment->to_state,
-			],
-			'weight'            => $shipment->weight * 1000, // Grams!
-			'dimensions'        => [
-				'length' => $shipment->length,
-				'breadth' => $shipment->width,
-				'height' => $shipment->height,
-			],
-			'order_items'       => $items,
-		];
+            'shipment_category' => 'b2c',
+            
+            'warehouse_detail' => [
+                'pickup_location_id' => (int) $warehouse_id,
+                'return_location_id' => (int) $warehouse_id,
+            ],
 
-		// Include Courier ID if selecting/booking
-		if ( ! empty( $shipment->courier_id ) ) {
-			$payload['courier_id'] = $shipment->courier_id;
-		} elseif ( ! empty( $shipment->courier ) ) {
-			// Fallback: mostly for logging, API likely needs ID
-			$payload['courier_name'] = $shipment->courier; 
-		}
+            'consignee_detail' => [
+                'first_name' => substr( $shipment->to_contact, 0, 25 ) ?: 'Customer',
+                'last_name'  => '.', // Mandatory field
+                'company_name' => '',
+                'contact_number_primary' => $shipment->to_phone,
+                'email_id'   => 'customer@example.com', // Optional per docs?
+                'consignee_address' => [
+                    'address_line1'    => substr( $shipment->to_address1, 0, 50 ),
+                    'address_line2'    => substr( $shipment->to_address2, 0, 50 ),
+                    'address_landmark' => '',
+                    'pincode'          => $shipment->to_pincode,
+                ]
+            ],
 
-		// Note: "pickup_address_id" is mandatory usually. 
-		// If fails, we might need a workaround or hardcoded ID from BigShip dashboard.
+            'order_detail' => [
+                'invoice_date' => gmdate( 'Y-m-d\TH:i:s.000\Z' ), // UTC Format
+                'invoice_id'   => (string) $shipment->order_id,
+                'payment_type' => $payment_type,
+                'shipment_invoice_amount'  => (float) $shipment->declared_value,
+                'total_collectable_amount' => 0, // Prepaid = 0
+                'ewaybill_number' => '',
+                
+                // BOX DETAILS (One box for B2C per docs)
+                'box_details' => [
+                    [
+                        'each_box_dead_weight' => (float) $shipment->weight, // Kg
+                        'each_box_length'      => (int) $shipment->length,
+                        'each_box_width'       => (int) $shipment->width,
+                        'each_box_height'      => (int) $shipment->height,
+                        'each_box_invoice_amount' => (float) $shipment->declared_value,
+                        'each_box_collectable_amount' => 0,
+                        'box_count'            => 1, // Mandatory 1 for B2C
+                        'product_details'      => $product_details
+                    ]
+                ]
+            ]
+        ];
 		
+		// Log Payload for debugging
+		error_log( 'ZSS DEBUG: BigShip Order Payload: ' . print_r( $payload, true ) );
+
 		$response = $this->client->post( 'order/add/single', $payload );
+        error_log( 'ZSS DEBUG: BigShip Order Response: ' . print_r( $response, true ) );
 
 		if ( is_wp_error( $response ) ) {
 			return $response;
 		}
 
-		if ( isset( $response['status'] ) && $response['status'] == false ) {
-			// If already exists, maybe Update? Or maybe it just returns the ID?
-			// Assuming message says "Order already exists". 
-			// Ideally we get the ID back.
+        // Response Pattern: { data: "system_order_id is 1000252960", ... }
+        // We need to extract the ID from the string string!
+        // Documentation says: "data": "system_order_id is 1000252960"
+        
+        $data_str = $response['data'] ?? '';
+        
+        if ( preg_match( '/system_order_id is (\d+)/', $data_str, $matches ) ) {
+            return $matches[1];
+        }
+
+        // Fallback: Check if success is false
+		if ( isset( $response['success'] ) && $response['success'] == false ) {
+			// If already exists, we might need to "Search" for it? OR Update?
+            // Docs don't mention update. Assuming we just need the ID.
+            // If "Order already exists", maybe we can parse ID from message?
+            return new \WP_Error( 'bigship_order_error', $response['message'] ?? 'BigShip Order Creation Failed' );
 		}
 
-		// return System Order ID
-		return $response['data']['system_order_id'] ?? null;
+		return null; // Should have been caught by regex
 	}
 
 	public function getRates( $shipment ) {
