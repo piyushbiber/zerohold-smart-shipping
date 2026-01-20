@@ -343,27 +343,39 @@ class BigShipAdapter implements PlatformInterface {
 	 * @return string|false
 	 */
 	private function fetchWarehouseIdByName( $target_name ) {
-		// Endpoint: GET /api/warehouse/get/all
+		// Try 1: GET /api/warehouse/get/all (User option D)
 		$response = $this->client->get( 'warehouse/get/all' );
+        
+        // Log Raw Response to debug structure
+		error_log( 'ZSS DEBUG: BigShip warehouse/get/all Raw: ' . print_r( $response, true ) );
 
-		// Debug Log
-		error_log( 'ZSS DEBUG: BigShip GetAll Warehouses Response Count: ' . ( isset($response['data']) ? count($response['data']) : 0 ) );
+		$warehouses = [];
+		if ( ! is_wp_error( $response ) && ! empty( $response['data'] ) ) {
+			$warehouses = $response['data'];
+		} else {
+            // Try 2: GET /api/warehouse/fetch (Fallback)
+			error_log( 'ZSS DEBUG: warehouse/get/all Empty or Failed. Trying warehouse/fetch fallback...' );
+            $response_2 = $this->client->get( 'warehouse/fetch' );
+            error_log( 'ZSS DEBUG: BigShip warehouse/fetch Raw: ' . print_r( $response_2, true ) );
+            
+            if ( ! is_wp_error( $response_2 ) && ! empty( $response_2['data'] ) ) {
+                $warehouses = $response_2['data'];
+            }
+        }
 
-		if ( is_wp_error( $response ) || empty( $response['data'] ) ) {
-			return false;
-		}
-
-		foreach ( $response['data'] as $wh ) {
+		// Iterate
+		foreach ( $warehouses as $wh ) {
 			// Check Name Match
 			$name = $wh['warehouse_name'] ?? $wh['name'] ?? '';
 			
 			if ( strtolower( trim( $name ) ) === strtolower( trim( $target_name ) ) ) {
 				// Found it! Return strict ID.
-				// BigShip usually returns 'pickup_address_id' or 'warehouse_id'
+                // Log the full warehouse object to understand key names
+                error_log( 'ZSS DEBUG: Found Matching Warehouse Object: ' . print_r( $wh, true ) );
+
 				$id = $wh['pickup_address_id'] ?? $wh['warehouse_id'] ?? $wh['id'] ?? false;
 				
 				if ( $id ) {
-					// Log structure for confirmation
 					error_log( "ZSS DEBUG: Match Found! ID: $id" );
 					return $id;
 				}
