@@ -90,8 +90,6 @@ class RateNormalizer {
 	 */
 	public function normalizeBigShip( $response ) {
 		// Mapping based on common BigShip response fields
-	public function normalizeBigShip( $response ) {
-		// Mapping based on common BigShip response fields
 		// Fix: Map 'total_shipping_charges' (from debug logs) to base
 		$base = isset($response['total_shipping_charges']) ? (float) $response['total_shipping_charges'] : ( isset($response['freight_charges']) ? (float) $response['freight_charges'] : 0 );
 		$courier_name = isset($response['courier_name']) ? trim($response['courier_name']) : '';
