@@ -275,18 +275,34 @@ class BigShipAdapter implements PlatformInterface {
 
 		$response = $this->client->post( 'warehouse/add', $payload );
 		
-		if ( ! is_wp_error( $response ) && isset( $response['data']['pickup_address_id'] ) ) {
-			return $response['data']['pickup_address_id'];
-		} else {
-			// If API returns error message, pass it through?
-			$msg = 'Failed to create BigShip warehouse';
-			if ( isset( $response['message'] ) ) {
-				$msg .= ': ' . $response['message'];
-			} elseif ( is_wp_error( $response ) ) {
-				$msg .= ': ' . $response->get_error_message();
-			}
-			error_log( 'ZSS ERROR: ' . $msg . ' Payload: ' . print_r( $payload, true ) );
-			return new \WP_Error( 'bigship_warehouse_error', $msg );
+		// DEBUG: Log the RAW response to see where the ID is hiding
+		error_log( 'ZSS DEBUG: BigShip Raw Warehouse Response: ' . print_r( $response, true ) );
+
+		if ( is_wp_error( $response ) ) {
+			// Pass through specific error
+			return $response;
 		}
+
+		// Success Pattern 1: { data: { pickup_address_id: 123 } }
+		if ( isset( $response['data']['pickup_address_id'] ) ) {
+			return $response['data']['pickup_address_id'];
+		}
+		
+		// Success Pattern 2: { data: { warehouse_id: 123 } } (User suggestion)
+		if ( isset( $response['data']['warehouse_id'] ) ) {
+			return $response['data']['warehouse_id'];
+		}
+
+		// Success Pattern 3: Maybe plain ID or inside message?
+		// If "Created Successfully" but no ID found, we are Stuck.
+		// Use error_log to inspect the structure from above.
+		
+		$msg = 'Failed to extract BigShip warehouse ID';
+		if ( isset( $response['message'] ) ) {
+			$msg .= ': ' . $response['message'];
+		}
+		
+		error_log( 'ZSS ERROR: ' . $msg );
+		return new \WP_Error( 'bigship_warehouse_error', $msg );
 	}
 }
