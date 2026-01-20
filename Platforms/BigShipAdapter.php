@@ -260,7 +260,7 @@ class BigShipAdapter implements PlatformInterface {
 		$landmark = substr( preg_replace( '/[^A-Za-z0-9 .,-\/]/', '', $shipment->from_city ), 0, 50 );
 
 		// 6. Generate Safe Warehouse Name (Internal ID basically)
-		$safe_wh_name = preg_replace( '/[^A-Za-z0-9 .,-\/]/', '', 'Vendor_' . $shipment->vendor_id );
+		$safe_wh_name = preg_replace( '/[^A-Za-z0-9 .,-\/]/', '', 'ZH-WH-' . $shipment->vendor_id );
 
 		$payload = [
 			'warehouse_name'         => $safe_wh_name,
