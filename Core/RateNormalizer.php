@@ -91,13 +91,19 @@ class RateNormalizer {
 	public function normalizeBigShip( $response ) {
 		// Mapping based on common BigShip response fields
 		// Fix: Map 'total_shipping_charges' (from debug logs) to base
-		$base = isset($response['total_shipping_charges']) ? $response['total_shipping_charges'] : ( isset($response['freight_charges']) ? $response['freight_charges'] : 0 );
-		
+		$base = isset($response['total_shipping_charges']) ? (float) $response['total_shipping_charges'] : ( isset($response['freight_charges']) ? (float) $response['freight_charges'] : 0 );
+		$courier_name = isset($response['courier_name']) ? trim($response['courier_name']) : '';
+
+        // Strict Filter: Reject invalid rates immediately
+        if ( $base <= 0 || empty( $courier_name ) ) {
+            return null;
+        }
+
 		return new RateQuote([
 			'base'     => $base,
 			'zone'     => isset($response['zone']) ? $response['zone'] : '',
 			'edd'      => isset($response['edd']) ? $response['edd'] : '',
-			'courier'  => isset($response['courier_name']) ? $response['courier_name'] : 'BigShip',
+			'courier'  => $courier_name,
 			'courier_id' => isset($response['courier_id']) ? $response['courier_id'] : '', // Capture ID for booking
 			'platform' => 'bigship',
 		]);
