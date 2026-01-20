@@ -88,6 +88,10 @@ class BigShipAdapter implements PlatformInterface {
                 'shipment_invoice_amount'  => (float) $shipment->declared_value,
                 'total_collectable_amount' => 0, // Prepaid = 0
                 'ewaybill_number' => '',
+                'document_detail' => [
+                    'invoice_document_file'  => '',
+                    'ewaybill_document_file' => ''
+                ],
                 
                 // BOX DETAILS (One box for B2C per docs)
                 'box_details' => [
