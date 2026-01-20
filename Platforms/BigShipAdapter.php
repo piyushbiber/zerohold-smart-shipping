@@ -224,33 +224,69 @@ class BigShipAdapter implements PlatformInterface {
 	public function createWarehouse( $shipment ) {
 		// Endpoint: POST /warehouse/add
 		
-		// Map Fields
-		// Map Fields
+		// 1. Validate Phone (Strict: 10 digits, starts with 6-9)
+		$phone = preg_replace( '/[^0-9]/', '', $shipment->from_phone );
+		if ( ! preg_match( '/^[6-7-8-9][0-9]{9}$/', $phone ) ) {
+			// BLOCKING ERROR -> POPUP
+			return new \WP_Error( 'bs_validation_phone', 'Vendor contact number is missing or invalid. Please update your store contact to continue shipping.' );
+		}
+
+		// 2. Validate Pincode (Strict: 6 digits)
+		$pincode = preg_replace( '/[^0-9]/', '', $shipment->from_pincode );
+		if ( strlen( $pincode ) !== 6 ) {
+			return new \WP_Error( 'bs_validation_pincode', 'Vendor pincode is invalid. It must be exactly 6 digits.' );
+		}
+
+		// 3. Prepare Address Line 1 (10-50 chars, allowed charset)
+		// Rule: Only A-Z 0-9 space . , - /
+		$raw_addr1 = $shipment->from_address1;
+		$safe_addr1 = preg_replace( '/[^A-Za-z0-9 .,-\/]/', '', $raw_addr1 );
+		$addr1_final = substr( trim( $safe_addr1 ), 0, 50 ); // Max 50
+
+		// Check Min Length 10
+		if ( strlen( $addr1_final ) < 10 ) {
+			// Fallback: Store Name + " Warehouse"
+			$store_name_safe = preg_replace( '/[^A-Za-z0-9 .,-\/]/', '', $shipment->from_store );
+			$fallback = $store_name_safe . ' Warehouse';
+			$addr1_final = substr( $fallback, 0, 50 );
+		}
 		
-		// Fix: Sanitize Warehouse Name (Alphanumeric + space + safe chars)
-		$safe_name = preg_replace( '/[^A-Za-z0-9 .,-\/]/', '', 'Vendor_' . $shipment->vendor_id );
-		
-		// Fix: Truncate Address (Max 50 chars)
-		$address_1 = substr( trim( $shipment->from_address1 ), 0, 50 );
+		// 4. Prepare Address Line 2 (Max 50)
+		$raw_addr2 = $shipment->from_address2;
+		$safe_addr2 = preg_replace( '/[^A-Za-z0-9 .,-\/]/', '', $raw_addr2 );
+		$addr2_final = substr( trim( $safe_addr2 ), 0, 50 );
+
+		// 5. Landmark (City or empty, Max 50)
+		$landmark = substr( preg_replace( '/[^A-Za-z0-9 .,-\/]/', '', $shipment->from_city ), 0, 50 );
+
+		// 6. Generate Safe Warehouse Name (Internal ID basically)
+		$safe_wh_name = preg_replace( '/[^A-Za-z0-9 .,-\/]/', '', 'Vendor_' . $shipment->vendor_id );
 
 		$payload = [
-			'warehouse_name' => $safe_name,
-			'email'          => 'vendor@example.com',
-			'contact_number_primary' => $shipment->from_phone ?: '9876543210',
-			'address_line1'  => $address_1,
-			'address_line2'  => $shipment->from_address2,
-			'address_pincode' => $shipment->from_pincode ?? '110001',
-			'city'           => $shipment->from_city,
-			'state'          => $shipment->from_state,
+			'warehouse_name'         => $safe_wh_name,
+			'address_line1'          => $addr1_final,
+			'address_line2'          => $addr2_final, // Optional
+			'address_landmark'       => $landmark,    // Optional
+			'address_pincode'        => $pincode,     // Required (6 digit)
+			'contact_number_primary' => $phone,       // Required (10 digit)
 		];
+
+		// Excluded: email, company_name, contact_person_name, mobile
 
 		$response = $this->client->post( 'warehouse/add', $payload );
 		
 		if ( ! is_wp_error( $response ) && isset( $response['data']['pickup_address_id'] ) ) {
 			return $response['data']['pickup_address_id'];
 		} else {
-			error_log( 'ZSS ERROR: BigShip Warehouse Create Failed: ' . print_r( $response, true ) );
-			return new \WP_Error( 'bigship_warehouse_error', 'Failed to create BigShip warehouse' );
+			// If API returns error message, pass it through?
+			$msg = 'Failed to create BigShip warehouse';
+			if ( isset( $response['message'] ) ) {
+				$msg .= ': ' . $response['message'];
+			} elseif ( is_wp_error( $response ) ) {
+				$msg .= ': ' . $response->get_error_message();
+			}
+			error_log( 'ZSS ERROR: ' . $msg . ' Payload: ' . print_r( $payload, true ) );
+			return new \WP_Error( 'bigship_warehouse_error', $msg );
 		}
 	}
 }
