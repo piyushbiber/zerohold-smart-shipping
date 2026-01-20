@@ -95,8 +95,8 @@ class RateNormalizer {
 		$courier_name = isset($response['courier_name']) ? trim($response['courier_name']) : '';
 
         // DEBUG: Inspect extraction
-        // error_log( "ZSS DEBUG: normalizeBigShip Input Keys: " . implode(',', array_keys($response)) );
-        // error_log( "ZSS DEBUG: Extracted Base: $base, Courier: $courier_name" );
+        error_log( "ZSS DEBUG: normalizeBigShip Input Keys: " . implode(',', array_keys($response)) );
+        error_log( "ZSS DEBUG: Extracted Base: $base, Courier: $courier_name" );
 
         // Strict Filter: Reject invalid rates immediately
         if ( $base <= 0 || empty( $courier_name ) ) {

@@ -19,6 +19,9 @@ class RateQuote {
 	public $courier_id;
 
 	public function __construct( $data = [] ) {
+        if ( is_object( $data ) ) {
+            $data = (array) $data;
+        }
 		$this->base           = isset( $data['base'] ) ? $data['base'] : 0;
 		$this->freight        = isset( $data['freight'] ) ? $data['freight'] : 0;
 		$this->cod            = isset( $data['cod'] ) ? $data['cod'] : 0;
