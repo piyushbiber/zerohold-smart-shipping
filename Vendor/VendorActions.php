@@ -19,6 +19,9 @@ class VendorActions {
 		
 		// Step 2.6.5: Register download handler
 		add_action( 'admin_post_zh_download_label', [ $this, 'zh_download_label' ] );
+
+		// Hook: Flag vendor for warehouse refresh on profile update
+		add_action( 'dokan_store_profile_saved', [ '\Zerohold\Shipping\Core\WarehouseManager', 'flagVendorForRefresh' ] );
 	}
 
 	/**
@@ -179,6 +182,9 @@ class VendorActions {
 		$mapper   = new OrderMapper();
 		$shipment = $mapper->map( $order );
 		error_log( 'ZSS AJAX: Shipment mapped' );
+
+		// Step 2.6.6: Auto-Refresh Warehouse if needed
+		\Zerohold\Shipping\Core\WarehouseManager::checkAndRefresh( $shipment );
 
 		// 1. Get Enabled Platforms
 		$platforms = \Zerohold\Shipping\Core\PlatformManager::getEnabledPlatforms();

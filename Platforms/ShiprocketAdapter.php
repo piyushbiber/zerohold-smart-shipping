@@ -57,7 +57,7 @@ class ShiprocketAdapter implements PlatformInterface {
 			'billing_state'         => $shipment->to_state,
 			'billing_country'       => $shipment->to_country,
 			'billing_email'         => 'customer@example.com', // fallback
-			'billing_phone'         => $shipment->to_phone,
+			'billing_phone'         => $shipment->to_phone ?: '9999999999',
 			'shipping_is_billing'   => true,
 			'order_items'           => $order_items,
 			'payment_method'        => $shipment->payment_mode,

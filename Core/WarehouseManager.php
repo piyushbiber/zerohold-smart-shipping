@@ -30,7 +30,7 @@ class WarehouseManager {
 			$meta_key = '_sr_pickup_location';
 			$adapter  = new ShiprocketAdapter();
 		} elseif ( $platform === 'bigship' ) {
-			$meta_key = 'zh_bs_warehouse_id';
+			$meta_key = '_bs_warehouse_id'; // User requested this key
 			$adapter  = new BigShipAdapter();
 		} else {
 			return false;
@@ -59,5 +59,50 @@ class WarehouseManager {
 		}
 
 		return false;
+	}
+
+	/**
+	 * Hook Target: Mark vendor for warehouse refresh on profile update.
+	 * 
+	 * @param int $vendor_id
+	 */
+	public static function flagVendorForRefresh( $vendor_id ) {
+		update_user_meta( $vendor_id, '_zh_warehouse_status', 'NEED_REFRESH' );
+	}
+
+	/**
+	 * Checks if refresh is needed and executes it for all platforms.
+	 * 
+	 * @param \Zerohold\Shipping\Models\Shipment $shipment
+	 */
+	public static function checkAndRefresh( $shipment ) {
+		if ( empty( $shipment->vendor_id ) ) {
+			return;
+		}
+
+		$status = get_user_meta( $shipment->vendor_id, '_zh_warehouse_status', true );
+
+		if ( $status === 'NEED_REFRESH' ) {
+			error_log( "ZSS: Refreshing Warehouses for Vendor " . $shipment->vendor_id );
+			
+			// 1. Refresh Shiprocket
+			$sr_adapter = new ShiprocketAdapter();
+			$sr_id      = $sr_adapter->createWarehouse( $shipment );
+			if ( $sr_id && ! is_wp_error( $sr_id ) ) {
+				update_user_meta( $shipment->vendor_id, '_sr_pickup_location', $sr_id );
+				error_log( "ZSS: Shiprocket Warehouse Refreshed: $sr_id" );
+			}
+
+			// 2. Refresh BigShip
+			$bs_adapter = new BigShipAdapter();
+			$bs_id      = $bs_adapter->createWarehouse( $shipment );
+			if ( $bs_id && ! is_wp_error( $bs_id ) ) {
+				update_user_meta( $shipment->vendor_id, '_bs_warehouse_id', $bs_id );
+				error_log( "ZSS: BigShip Warehouse Refreshed: $bs_id" );
+			}
+
+			// 3. Freeze
+			update_user_meta( $shipment->vendor_id, '_zh_warehouse_status', 'FROZEN' );
+		}
 	}
 }
