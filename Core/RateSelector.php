@@ -24,7 +24,14 @@ class RateSelector {
 
 		// NUCLEAR FIX: Enforce Object Type for all rates
 		// This handles cases where adapters might return arrays instead of RateQuote objects
+		// NUCLEAR FIX: Enforce Object Type for all rates
+		// This handles cases where adapters might return arrays instead of RateQuote objects
 		foreach ( $all_rates as $key => $rate ) {
+            // Fix: Don't re-wrap if it's already a RateQuote object!
+            if ( $rate instanceof \Zerohold\Shipping\Models\RateQuote ) {
+                continue;
+            }
+            
 			if ( is_array( $rate ) ) {
 				$all_rates[ $key ] = new \Zerohold\Shipping\Models\RateQuote( $rate );
 			}
