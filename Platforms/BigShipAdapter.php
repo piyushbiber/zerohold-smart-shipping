@@ -300,9 +300,50 @@ class BigShipAdapter implements PlatformInterface {
 		$msg = 'Failed to extract BigShip warehouse ID';
 		if ( isset( $response['message'] ) ) {
 			$msg .= ': ' . $response['message'];
+
+			// RECOVERY: If "already exist", try to fetch the ID from the list.
+			if ( stripos( $response['message'], 'exist' ) !== false ) {
+				error_log( 'ZSS DEBUG: BigShip Warehouse logic blocked by duplication. Attempting recovery...' );
+				$recovered_id = $this->fetchWarehouseIdByName( $safe_wh_name );
+				if ( $recovered_id ) {
+					error_log( 'ZSS DEBUG: BigShip Warehouse ID Recovered: ' . $recovered_id );
+					return $recovered_id;
+				}
+				$msg .= ' (Recovery Failed)';
+			}
 		}
 		
 		error_log( 'ZSS ERROR: ' . $msg );
 		return new \WP_Error( 'bigship_warehouse_error', $msg );
+	}
+
+	/**
+	 * Helper: Fetch warehouse ID by name to recover from duplication errors.
+	 * 
+	 * @param string $warehouse_name
+	 * @return string|false
+	 */
+	private function fetchWarehouseIdByName( $warehouse_name ) {
+		// Endpoint: GET /warehouse/fetch (or standard list endpoint)
+		$response = $this->client->get( 'warehouse/fetch' );
+
+		if ( is_wp_error( $response ) || empty( $response['data'] ) ) {
+			error_log( 'ZSS DEBUG ERROR: BigShip fetchWarehouseIdByName failed to get list.' );
+			return false;
+		}
+
+		// Iterate
+		foreach ( $response['data'] as $wh ) {
+			// Check if name matches. Key might be 'warehouse_name' or 'name'.
+			$name = $wh['warehouse_name'] ?? $wh['name'] ?? '';
+			
+			// Normalize for comparison
+			if ( trim( $name ) === trim( $warehouse_name ) ) {
+				// Return ID. Key might be 'pickup_address_id' or 'warehouse_id' or 'id'.
+				return $wh['pickup_address_id'] ?? $wh['warehouse_id'] ?? $wh['id'] ?? false;
+			}
+		}
+
+		return false;
 	}
 }
