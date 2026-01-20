@@ -287,10 +287,29 @@ class BigShipAdapter implements PlatformInterface {
 	public function getLabel( $shipment_id ) {
 		// POST /shipment/data?shipment_data_id=2&system_order_id=...
 		// $shipment_id here assumed to be system_order_id.
-		return $this->client->post( 'shipment/data', [
+	public function getLabel( $shipment_id ) {
+		// POST /shipment/data?shipment_data_id=2&system_order_id=...
+        // Docs likely return the label link OR data.
+        
+		$response = $this->client->post( 'shipment/data', [
 			'shipment_data_id' => 2,
 			'system_order_id'  => $shipment_id
 		]);
+        
+        error_log( 'ZSS DEBUG: BigShip getLabel raw response: ' . print_r( $response, true ) );
+        
+        // Handle possible PDF binary or link
+        // If response has 'data' containing a URL:
+        if ( isset( $response['data'] ) ) {
+            // Check if it's already a URL
+            if ( filter_var( $response['data'], FILTER_VALIDATE_URL ) ) {
+                return [ 'label_url' => $response['data'] ];
+            }
+            // Check if 'label_url' key exists inside data? (unlikely from "shipment/data")
+        }
+        
+        return $response; // Return raw to let VendorActions handle it if standard mapping fails
+	}
 	}
 
 	public function track( $shipment_id ) {
