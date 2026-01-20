@@ -343,45 +343,52 @@ class BigShipAdapter implements PlatformInterface {
 	 * @return string|false
 	 */
 	private function fetchWarehouseIdByName( $target_name ) {
-		// Try 1: GET /api/warehouse/get/all (User option D)
-		$response = $this->client->get( 'warehouse/get/all' );
-        
-        // Log Raw Response to debug structure
-		error_log( 'ZSS DEBUG: BigShip warehouse/get/all Raw: ' . print_r( $response, true ) );
-
-		$warehouses = [];
-		if ( ! is_wp_error( $response ) && ! empty( $response['data'] ) ) {
-			$warehouses = $response['data'];
-		} else {
-            // Try 2: GET /api/warehouse/fetch (Fallback)
-			error_log( 'ZSS DEBUG: warehouse/get/all Empty or Failed. Trying warehouse/fetch fallback...' );
-            $response_2 = $this->client->get( 'warehouse/fetch' );
-            error_log( 'ZSS DEBUG: BigShip warehouse/fetch Raw: ' . print_r( $response_2, true ) );
-            
-            if ( ! is_wp_error( $response_2 ) && ! empty( $response_2['data'] ) ) {
-                $warehouses = $response_2['data'];
-            }
-        }
-
-		// Iterate
-		foreach ( $warehouses as $wh ) {
-			// Check Name Match
-			$name = $wh['warehouse_name'] ?? $wh['name'] ?? '';
+		// Endpoint: GET /api/warehouse/get/list (Pagination supported)
+		$page_index = 1;
+		$page_size  = 200; // Max allowed per docs
+		$max_pages  = 10;  // Safety break
+		
+		do {
+			error_log( "ZSS DEBUG: BigShip Fetching Warehouses Page $page_index (Target: $target_name)" );
 			
-			if ( strtolower( trim( $name ) ) === strtolower( trim( $target_name ) ) ) {
-				// Found it! Return strict ID.
-                // Log the full warehouse object to understand key names
-                error_log( 'ZSS DEBUG: Found Matching Warehouse Object: ' . print_r( $wh, true ) );
+			$response = $this->client->get( 'warehouse/get/list', [
+				'page_index' => $page_index,
+				'page_size'  => $page_size
+			] );
 
-				$id = $wh['pickup_address_id'] ?? $wh['warehouse_id'] ?? $wh['id'] ?? false;
-				
-				if ( $id ) {
-					error_log( "ZSS DEBUG: Match Found! ID: $id" );
-					return $id;
+			if ( is_wp_error( $response ) || empty( $response['data'] ) ) {
+				error_log( 'ZSS DEBUG ERROR: BigShip warehouse list fetch failed or empty data.' );
+				return false;
+			}
+
+			// Validate Structure
+			$data = $response['data'];
+			$result_data = $data['result_data'] ?? [];
+			$total_count = $data['result_count'] ?? 0;
+
+			// Iterate Current Page
+			foreach ( $result_data as $wh ) {
+				$name = $wh['warehouse_name'] ?? '';
+				if ( strtolower( trim( $name ) ) === strtolower( trim( $target_name ) ) ) {
+					$id = $wh['warehouse_id'] ?? false;
+					if ( $id ) {
+						error_log( "ZSS DEBUG: Match Found on Page $page_index! ID: $id" );
+						return $id;
+					}
 				}
 			}
-		}
 
+			// Check if we need next page
+			$fetched_so_far = $page_index * $page_size;
+			if ( $fetched_so_far >= $total_count ) {
+				break; // Done
+			}
+
+			$page_index++;
+
+		} while ( $page_index <= $max_pages );
+
+		error_log( "ZSS DEBUG: Warehouse '$target_name' not found in BigShip list." );
 		return false;
 	}
 }
