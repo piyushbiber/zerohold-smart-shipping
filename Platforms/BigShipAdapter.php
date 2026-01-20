@@ -221,126 +221,152 @@ class BigShipAdapter implements PlatformInterface {
 	 * @param \Zerohold\Shipping\Models\Shipment $shipment
 	 * @return string|WP_Error Warehouse ID
 	 */
+	/**
+	 * Creates (or Updates) a warehouse on BigShip.
+	 * Implements Option D: Smart Refresh + Duplication Recovery.
+	 * 
+	 * @param \Zerohold\Shipping\Models\Shipment $shipment
+	 * @return string|WP_Error Warehouse ID
+	 */
 	public function createWarehouse( $shipment ) {
-		// Endpoint: POST /warehouse/add
-		
-		// 1. Validate Phone (Strict: 10 digits, starts with 6-9)
+		// 1. Strict Validation
+		// Phone: 10 digit, starts 6/7/8/9
 		$phone = preg_replace( '/[^0-9]/', '', $shipment->from_phone );
 		if ( ! preg_match( '/^[6-7-8-9][0-9]{9}$/', $phone ) ) {
-			// BLOCKING ERROR -> POPUP
-			return new \WP_Error( 'bs_validation_phone', 'Vendor contact number is missing or invalid. Please update your store contact to continue shipping.' );
+			return new \WP_Error( 'bs_validation_phone', 'Vendor contact number is missing or invalid (Must be 10 digits starting with 6-9).' );
 		}
 
-		// 2. Validate Pincode (Strict: 6 digits)
+		// Pincode: Exactly 6 digits
 		$pincode = preg_replace( '/[^0-9]/', '', $shipment->from_pincode );
 		if ( strlen( $pincode ) !== 6 ) {
 			return new \WP_Error( 'bs_validation_pincode', 'Vendor pincode is invalid. It must be exactly 6 digits.' );
 		}
 
-		// 3. Prepare Address Line 1 (10-50 chars, allowed charset)
-		// Rule: Only A-Z 0-9 space . , - /
+		// Address: 10-50 chars, safe chars only
 		$raw_addr1 = $shipment->from_address1;
 		$safe_addr1 = preg_replace( '/[^A-Za-z0-9 .,-\/]/', '', $raw_addr1 );
-		$addr1_final = substr( trim( $safe_addr1 ), 0, 50 ); // Max 50
+		$addr1_final = substr( trim( $safe_addr1 ), 0, 50 );
 
-		// Check Min Length 10
 		if ( strlen( $addr1_final ) < 10 ) {
-			// Fallback: Store Name + " Warehouse"
 			$store_name_safe = preg_replace( '/[^A-Za-z0-9 .,-\/]/', '', $shipment->from_store );
 			$fallback = $store_name_safe . ' Warehouse';
 			$addr1_final = substr( $fallback, 0, 50 );
 		}
 		
-		// 4. Prepare Address Line 2 (Max 50)
 		$raw_addr2 = $shipment->from_address2;
 		$safe_addr2 = preg_replace( '/[^A-Za-z0-9 .,-\/]/', '', $raw_addr2 );
 		$addr2_final = substr( trim( $safe_addr2 ), 0, 50 );
 
-		// 5. Landmark (City or empty, Max 50)
 		$landmark = substr( preg_replace( '/[^A-Za-z0-9 .,-\/]/', '', $shipment->from_city ), 0, 50 );
 
-		// 6. Generate Safe Warehouse Name (Internal ID basically)
-		$safe_wh_name = preg_replace( '/[^A-Za-z0-9 .,-\/]/', '', 'ZH-WH-' . $shipment->vendor_id );
+		// Naming: Unique per vendor
+		$safe_wh_name = 'ZH-WH-' . $shipment->vendor_id;
 
+		// Payload (Cleaned)
 		$payload = [
 			'warehouse_name'         => $safe_wh_name,
 			'address_line1'          => $addr1_final,
-			'address_line2'          => $addr2_final, // Optional
-			'address_landmark'       => $landmark,    // Optional
-			'address_pincode'        => $pincode,     // Required (6 digit)
-			'contact_number_primary' => $phone,       // Required (10 digit)
+			'address_line2'          => $addr2_final,
+			'address_landmark'       => $landmark,
+			'address_pincode'        => $pincode,
+			'contact_number_primary' => $phone,
 		];
+		// Removed: email, company_name, contact_person_name, mobile as requested
 
-		// Excluded: email, company_name, contact_person_name, mobile
+		// 2. REFRESH LOGIC (Update instead of Create)
+		$existing_id = get_user_meta( $shipment->vendor_id, '_bs_warehouse_id', true );
+		$status      = get_user_meta( $shipment->vendor_id, '_zh_warehouse_status', true );
 
+		if ( $existing_id && $status === 'NEED_REFRESH' ) {
+			error_log( "ZSS DEBUG: Attempting BigShip Warehouse UPDATE for ID: $existing_id" );
+			
+			// Using 'warehouse/edit' assume standard endpoint naming
+			// Only update if we have the ID to pass (usually required in payload or param)
+			// Adding ID to payload for update
+			$update_payload = $payload;
+			$update_payload['pickup_address_id'] = $existing_id; // Check specific API docs if key differs
+			$update_payload['warehouse_id'] = $existing_id;      // Try both common keys
+
+			$update_res = $this->client->post( 'warehouse/edit', $update_payload );
+			error_log( 'ZSS DEBUG: BigShip Update Response: ' . print_r( $update_res, true ) );
+
+			if ( ! is_wp_error( $update_res ) && ( isset( $update_res['data'] ) || isset( $update_res['status'] ) && $update_res['status'] ) ) {
+				// Update Success
+				return $existing_id;
+			}
+			// Fallback to Create if Update fails
+			error_log( "ZSS DEBUG: Update failed, falling back to CREATE/RECOVER flow." );
+		}
+
+		// 3. CREATE LOGIC
 		$response = $this->client->post( 'warehouse/add', $payload );
-		
-		// DEBUG: Log the RAW response to see where the ID is hiding
-		error_log( 'ZSS DEBUG: BigShip Raw Warehouse Response: ' . print_r( $response, true ) );
+		error_log( 'ZSS DEBUG: BigShip Raw Create Response: ' . print_r( $response, true ) );
 
 		if ( is_wp_error( $response ) ) {
-			// Pass through specific error
 			return $response;
 		}
 
-		// Success Pattern 1: { data: { pickup_address_id: 123 } }
+		// Success Pattern 1: { data: { pickup_address_id: ... } }
 		if ( isset( $response['data']['pickup_address_id'] ) ) {
 			return $response['data']['pickup_address_id'];
 		}
 		
-		// Success Pattern 2: { data: { warehouse_id: 123 } } (User suggestion)
+		// Success Pattern 2: { data: { warehouse_id: ... } }
 		if ( isset( $response['data']['warehouse_id'] ) ) {
 			return $response['data']['warehouse_id'];
 		}
 
-		// Success Pattern 3: Maybe plain ID or inside message?
-		// If "Created Successfully" but no ID found, we are Stuck.
-		// Use error_log to inspect the structure from above.
+		// 4. DUPLICATION RECOVERY
+		$msg = $response['message'] ?? '';
 		
-		$msg = 'Failed to extract BigShip warehouse ID';
-		if ( isset( $response['message'] ) ) {
-			$msg .= ': ' . $response['message'];
-
-			// RECOVERY: If "already exist", try to fetch the ID from the list.
-			if ( stripos( $response['message'], 'exist' ) !== false ) {
-				error_log( 'ZSS DEBUG: BigShip Warehouse logic blocked by duplication. Attempting recovery...' );
-				$recovered_id = $this->fetchWarehouseIdByName( $safe_wh_name );
-				if ( $recovered_id ) {
-					error_log( 'ZSS DEBUG: BigShip Warehouse ID Recovered: ' . $recovered_id );
-					return $recovered_id;
-				}
-				$msg .= ' (Recovery Failed)';
+		// If "already exist" or similar message
+		if ( stripos( $msg, 'exist' ) !== false || ( isset( $response['status'] ) && $response['status'] == false ) ) {
+			error_log( "ZSS DEBUG: Warehouse duplication detected ('$safe_wh_name'). Attempting recovery..." );
+			
+			$recovered_id = $this->fetchWarehouseIdByName( $safe_wh_name );
+			
+			if ( $recovered_id ) {
+				error_log( "ZSS DEBUG: RECOVERED BigShip Warehouse ID: $recovered_id" );
+				return $recovered_id;
 			}
+			$msg .= ' (Recovery by Name Failed)';
 		}
 		
-		error_log( 'ZSS ERROR: ' . $msg );
-		return new \WP_Error( 'bigship_warehouse_error', $msg );
+		// Failure
+		return new \WP_Error( 'bigship_warehouse_error', 'Failed to create/recover warehouse: ' . $msg );
 	}
 
 	/**
-	 * Helper: Fetch warehouse ID by name to recover from duplication errors.
+	 * Helper: Fetch warehouse ID by name using GetAll endpoint.
 	 * 
-	 * @param string $warehouse_name
+	 * @param string $target_name
 	 * @return string|false
 	 */
-	private function fetchWarehouseIdByName( $warehouse_name ) {
-		// Endpoint: GET /warehouse/fetch (or standard list endpoint)
-		$response = $this->client->get( 'warehouse/fetch' );
+	private function fetchWarehouseIdByName( $target_name ) {
+		// Endpoint: GET /api/warehouse/get/all
+		$response = $this->client->get( 'warehouse/get/all' );
+
+		// Debug Log
+		error_log( 'ZSS DEBUG: BigShip GetAll Warehouses Response Count: ' . ( isset($response['data']) ? count($response['data']) : 0 ) );
 
 		if ( is_wp_error( $response ) || empty( $response['data'] ) ) {
-			error_log( 'ZSS DEBUG ERROR: BigShip fetchWarehouseIdByName failed to get list.' );
 			return false;
 		}
 
-		// Iterate
 		foreach ( $response['data'] as $wh ) {
-			// Check if name matches. Key might be 'warehouse_name' or 'name'.
+			// Check Name Match
 			$name = $wh['warehouse_name'] ?? $wh['name'] ?? '';
 			
-			// Normalize for comparison
-			if ( trim( $name ) === trim( $warehouse_name ) ) {
-				// Return ID. Key might be 'pickup_address_id' or 'warehouse_id' or 'id'.
-				return $wh['pickup_address_id'] ?? $wh['warehouse_id'] ?? $wh['id'] ?? false;
+			if ( strtolower( trim( $name ) ) === strtolower( trim( $target_name ) ) ) {
+				// Found it! Return strict ID.
+				// BigShip usually returns 'pickup_address_id' or 'warehouse_id'
+				$id = $wh['pickup_address_id'] ?? $wh['warehouse_id'] ?? $wh['id'] ?? false;
+				
+				if ( $id ) {
+					// Log structure for confirmation
+					error_log( "ZSS DEBUG: Match Found! ID: $id" );
+					return $id;
+				}
 			}
 		}
 
