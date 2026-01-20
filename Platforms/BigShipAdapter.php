@@ -295,14 +295,25 @@ class BigShipAdapter implements PlatformInterface {
         
         error_log( 'ZSS DEBUG: BigShip getLabel raw response: ' . print_r( $response, true ) );
         
-        // Handle possible PDF binary or link
-        // If response has 'data' containing a URL:
-        if ( isset( $response['data'] ) ) {
-            // Check if it's already a URL
-            if ( filter_var( $response['data'], FILTER_VALIDATE_URL ) ) {
-                return [ 'label_url' => $response['data'] ];
-            }
-            // Check if 'label_url' key exists inside data? (unlikely from "shipment/data")
+        $url = '';
+
+        // Case 1: Direct URL in 'data'
+        if ( isset( $response['data'] ) && filter_var( $response['data'], FILTER_VALIDATE_URL ) ) {
+            $url = $response['data'];
+        }
+        // Case 2: Nested key in 'data' (e.g. data['url'], data['label_url'])
+        elseif ( isset( $response['data'] ) && is_array( $response['data'] ) ) {
+             if ( isset( $response['data']['label_url'] ) ) {
+                 $url = $response['data']['label_url'];
+             } elseif ( isset( $response['data']['url'] ) ) {
+                 $url = $response['data']['url'];
+             } elseif ( isset( $response['data']['pdf'] ) ) {
+                 $url = $response['data']['pdf'];
+             }
+        }
+        
+        if ( ! empty( $url ) ) {
+            return [ 'label_url' => $url ];
         }
         
         return $response; // Return raw to let VendorActions handle it if standard mapping fails
