@@ -89,28 +89,51 @@ class RateNormalizer {
 	 * @return RateQuote
 	 */
 	public function normalizeBigShip( $response ) {
-		// Mapping based on common BigShip response fields
-		// Fix: Map 'total_shipping_charges' (from debug logs) to base
-		$base = isset($response['total_shipping_charges']) ? (float) $response['total_shipping_charges'] : ( isset($response['freight_charges']) ? (float) $response['freight_charges'] : 0 );
-		$courier_name = isset($response['courier_name']) ? trim($response['courier_name']) : '';
+		// Mapping: Try standard flat keys first, then nested structure
+        
+        // 1. Base Price
+		$base = 0;
+        if ( isset( $response['total_shipping_charges'] ) ) {
+            $base = (float) $response['total_shipping_charges'];
+        } elseif ( isset( $response['freight_charges'] ) ) {
+            $base = (float) $response['freight_charges'];
+        } elseif ( isset( $response['rate']['total_shipping_charges'] ) ) { // Nested check
+            $base = (float) $response['rate']['total_shipping_charges'];
+        }
+        
+        // 2. Courier Name
+		$courier_name = '';
+        if ( isset( $response['courier_name'] ) ) {
+            $courier_name = trim( $response['courier_name'] );
+        } elseif ( isset( $response['courier']['courier_name'] ) ) { // Nested check
+            $courier_name = trim( $response['courier']['courier_name'] );
+        } elseif ( isset( $response['courier_company'] ) ) {
+             $courier_name = trim( $response['courier_company'] );
+        }
 
         // DEBUG: Inspect extraction
-        error_log( "ZSS DEBUG: normalizeBigShip Input Keys: " . implode(',', array_keys($response)) );
-        error_log( "ZSS DEBUG: Extracted Base: $base, Courier: $courier_name" );
+        // error_log( "ZSS DEBUG: normalizeBigShip Input Keys: " . implode(',', array_keys($response)) );
+        // error_log( "ZSS DEBUG: Extracted Base: $base, Courier: $courier_name" );
 
-        // Strict Filter: Reject invalid rates immediately
+        // Strict Filter: Reject invalid rates
+        // We reject if base is 0 OR if courier is empty.
         if ( $base <= 0 || empty( $courier_name ) ) {
-            error_log( "ZSS DEBUG WARNING: Dropping Invalid BigShip Rate. Base: $base, Courier: $courier_name" );
+            // error_log( "ZSS DEBUG WARNING: Dropping Invalid BigShip Rate. Base: $base, Courier: $courier_name" );
             return null;
         }
 
-		return new RateQuote([
+		$quote = new RateQuote([
 			'base'     => $base,
 			'zone'     => isset($response['zone']) ? $response['zone'] : '',
 			'edd'      => isset($response['edd']) ? $response['edd'] : '',
 			'courier'  => $courier_name,
-			'courier_id' => isset($response['courier_id']) ? $response['courier_id'] : '', // Capture ID for booking
+			'courier_id' => isset($response['courier_id']) ? $response['courier_id'] : '', 
 			'platform' => 'bigship',
 		]);
+        
+        // Verify Object
+        // error_log( "ZSS DEBUG: Created Quote - Platform: {$quote->platform}, Base: {$quote->base}" );
+        
+        return $quote;
 	}
 }
