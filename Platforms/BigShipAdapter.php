@@ -210,9 +210,16 @@ class BigShipAdapter implements PlatformInterface {
 		$rates      = [];
 
 		foreach ( $response['data'] as $rate_data ) {
-			// BigShip rate structure might differ. 
-			// Assuming 'total_charges', 'courier_name', 'edd'.
-			$rates[] = $normalizer->normalizeBigShip( $rate_data );
+			// Normalize
+			$rate_obj = $normalizer->normalizeBigShip( $rate_data );
+            
+            // Defensive: Ensure we have an Object (user reported Array issues)
+            if ( is_array( $rate_obj ) ) {
+                error_log( 'ZSS DEBUG WARNING: normalizeBigShip returned Array. Converting to RateQuote.' );
+                $rate_obj = new \Zerohold\Shipping\Models\RateQuote( $rate_obj );
+            }
+            
+            $rates[] = $rate_obj;
 		}
 		
 		error_log( 'ZSS DEBUG: BigShip normalized rates count: ' . count( $rates ) );
