@@ -286,9 +286,6 @@ class BigShipAdapter implements PlatformInterface {
 
 	public function getLabel( $shipment_id ) {
 		// POST /shipment/data?shipment_data_id=2&system_order_id=...
-		// $shipment_id here assumed to be system_order_id.
-	public function getLabel( $shipment_id ) {
-		// POST /shipment/data?shipment_data_id=2&system_order_id=...
         // Docs likely return the label link OR data.
         
 		$response = $this->client->post( 'shipment/data', [
@@ -309,7 +306,6 @@ class BigShipAdapter implements PlatformInterface {
         }
         
         return $response; // Return raw to let VendorActions handle it if standard mapping fails
-	}
 	}
 
 	public function track( $shipment_id ) {
