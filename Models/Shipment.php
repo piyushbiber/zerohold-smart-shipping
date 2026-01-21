@@ -9,6 +9,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Shipment {
 	public $platform;
 	public $courier;
+	public $courier_id;      // Added for BigShip/Nimbus
+	public $courier_type;    // Added for mapping
+	public $vendor_id;       // Added for platform selection
 	public $awb;
 	public $label_url;
 	public $tracking_url;

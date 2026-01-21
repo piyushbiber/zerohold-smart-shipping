@@ -236,13 +236,40 @@ class VendorActions {
 		error_log( 'ZSS AJAX: Calling createOrder on ' . get_class( $adapter ) );
 		$response = $adapter->createOrder( $shipment );
 		error_log( 'ZSS AJAX: createOrder response: ' . print_r( $response, true ) );
+		
+		// Check for WP_Error
+		if ( is_wp_error( $response ) ) {
+			error_log( 'ZSS AJAX ERROR: createOrder returned WP_Error: ' . $response->get_error_message() );
+			wp_send_json_error( 'Order creation failed: ' . $response->get_error_message() );
+			return;
+		}
 
 		if ( isset( $response['shipment_id'] ) ) {
 			error_log( 'ZSS AJAX: shipment_id received: ' . $response['shipment_id'] );
 			
 			// Platform-specific follow-up (AWB gen)
 			// Shiprocket needs generateAWB. Nimbus might not.
-			// Let's generically call generateAWB, adapters can return success/noop if not needed.
+			// BigShip needs manifestOrder BEFORE generateAWB.
+			
+			if ( $adapter instanceof \Zerohold\Shipping\Platforms\BigShipAdapter && ! empty( $shipment->courier_id ) ) {
+				error_log( 'ZSS AJAX: BigShip detected, calling manifestOrder first' );
+				$manifest_result = $adapter->manifestOrder( $response['shipment_id'], $shipment->courier_id );
+				error_log( 'ZSS AJAX: manifestOrder response: ' . print_r( $manifest_result, true ) );
+				
+				if ( isset( $manifest_result['error'] ) ) {
+					error_log( 'ZSS AJAX ERROR: BigShip manifestOrder failed: ' . $manifest_result['error'] );
+					wp_send_json_error( 'Manifesting failed: ' . $manifest_result['error'] );
+					return;
+				}
+				
+				// Phase-2 Pickup: BigShip manifest = pickup scheduled
+				// Store pickup status after successful manifest
+				if ( isset( $manifest_result['status'] ) && $manifest_result['status'] === 'success' ) {
+					update_post_meta( $order_id, '_zh_bigship_pickup_status', 1 );
+					update_post_meta( $order_id, '_zh_bigship_manifest_response', wp_json_encode( $manifest_result ) );
+					error_log( 'ZSS AJAX: BigShip manifest successful - pickup scheduled' );
+				}
+			}
 			
 			error_log( 'ZSS AJAX: Calling generateAWB' );
 			$awb_response = $adapter->generateAWB( $response['shipment_id'] );
@@ -278,7 +305,7 @@ class VendorActions {
 
 				if ( isset( $label_response['label_url'] ) ) {
 					// Extract AWB Code (Platform specific or normalized?)
-					$awb_code = $awb_response['response']['data']['awb_code'] ?? $response['awb_code'] ?? 'N/A';
+					$awb_code = $awb_response['awb_code'] ?? $awb_response['response']['data']['awb_code'] ?? $response['awb_code'] ?? 'N/A';
 
 					// Store Meta
 					update_post_meta( $order_id, '_zh_shiprocket_shipment_id', $response['shipment_id'] );
@@ -308,6 +335,26 @@ class VendorActions {
                     }
 					
 					error_log( 'ZSS AJAX: Meta updated, success' );
+
+					// Phase-1 Pickup: Schedule pickup for Shiprocket orders
+					if ( $winner_platform === 'shiprocket' && method_exists( $adapter, 'generatePickup' ) ) {
+						error_log( 'ZSS AJAX: Shiprocket detected, calling generatePickup' );
+						$pickup_response = $adapter->generatePickup( $response['shipment_id'] );
+						error_log( 'ZSS AJAX: generatePickup response: ' . print_r( $pickup_response, true ) );
+						
+						if ( ! is_wp_error( $pickup_response ) && isset( $pickup_response['pickup_status'] ) && $pickup_response['pickup_status'] == 1 ) {
+							// Pickup scheduled successfully
+							update_post_meta( $order_id, '_zh_shiprocket_pickup_status', 1 );
+							update_post_meta( $order_id, '_zh_shiprocket_pickup_response', wp_json_encode( $pickup_response ) );
+							error_log( 'ZSS AJAX: Pickup scheduled successfully' );
+						} else {
+							// Pickup failed - log but don't block the label generation success
+							$error_msg = is_wp_error( $pickup_response ) ? $pickup_response->get_error_message() : 'Unknown error';
+							error_log( 'ZSS AJAX WARNING: Pickup scheduling failed: ' . $error_msg );
+							update_post_meta( $order_id, '_zh_shiprocket_pickup_status', 0 );
+							update_post_meta( $order_id, '_zh_shiprocket_pickup_error', $error_msg );
+						}
+					}
 
 					// Purge LiteSpeed Cache
 					if ( function_exists( 'do_action' ) ) {

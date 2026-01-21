@@ -90,8 +90,11 @@ class BigShipClient {
 
 	/**
 	 * POST Request
+	 * @param string $endpoint API endpoint
+	 * @param array $data POST body data (will be JSON encoded)
+	 * @param array $query_args Optional query parameters to append to URL
 	 */
-	public function post( $endpoint, $data = [] ) {
+	public function post( $endpoint, $data = [], $query_args = [] ) {
 		$token = $this->get_token();
 
 		if ( is_wp_error( $token ) ) {
@@ -99,6 +102,11 @@ class BigShipClient {
 		}
 
 		$url = $this->base_url . $endpoint;
+		
+		// Add query parameters if provided (for endpoints like shipment/data)
+		if ( ! empty( $query_args ) ) {
+			$url = add_query_arg( $query_args, $url );
+		}
 
 		$response = wp_remote_post( $url, [
 			'headers' => [

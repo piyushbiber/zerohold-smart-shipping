@@ -139,6 +139,27 @@ class ShiprocketAdapter implements PlatformInterface {
 			true
 		);
 	}
+
+	/**
+	 * Schedule pickup for a shipment.
+	 * 
+	 * @param int|array $shipment_id Single shipment ID or array of IDs
+	 * @return array API response
+	 */
+	public function generatePickup( $shipment_id ) {
+		// POST /courier/generate/pickup
+		// Shiprocket accepts single int or array
+		$payload = [
+			'shipment_id' => is_array( $shipment_id ) ? $shipment_id : $shipment_id
+		];
+
+		return $this->client->post(
+			'courier/generate/pickup',
+			$payload,
+			true
+		);
+	}
+
 	public function track( $shipment_id ) { return null; }
 
 	/**

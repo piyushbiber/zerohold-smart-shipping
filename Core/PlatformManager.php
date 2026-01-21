@@ -21,10 +21,10 @@ class PlatformManager {
 		// Future: enabledPlatforms += Nimbus
 		
 		$platforms = [
-			'shiprocket' => new ShiprocketAdapter(),
-			'bigship'    => new \Zerohold\Shipping\Platforms\BigShipAdapter(),
-			// 'nimbus'     => new NimbuspostAdapter(), // Parked
-		];
+		'shiprocket' => new ShiprocketAdapter(), // UNPARKED - Now competing with BigShip
+		'bigship'    => new \Zerohold\Shipping\Platforms\BigShipAdapter(),
+		// 'nimbus'     => new NimbuspostAdapter(), // Parked
+	];
 
 		return $platforms;
 	}

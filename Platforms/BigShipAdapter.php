@@ -188,6 +188,9 @@ class BigShipAdapter implements PlatformInterface {
 			return [];
 		}
 		error_log( 'ZSS DEBUG: BigShip System Order ID: ' . $system_order_id );
+	
+	// Store system_order_id for later use in createOrder
+	update_post_meta( $shipment->order_id, '_zh_bigship_system_order_id', $system_order_id );
 
 		// 2. Fetch Rates
 		// GET /api/order/shipping/rates?shipment_category=B2C&system_order_id=...
@@ -232,61 +235,66 @@ class BigShipAdapter implements PlatformInterface {
 
 		error_log( 'ZSS DEBUG: BigShip normalized rates count: ' . count( $rates ) );
 
-		return [ 'bigship' => $rates ];
+		return $rates;  // Return rates DIRECTLY (VendorActions adds platform key)
 	}
 
 	public function createOrder( $shipment ) {
-		// Final Booking Step
-		// We reuse createDraftOrder logic but this time we expect courier info to be present in $shipment.
-		// If the draft already exists, calling this again with courier_id should finalize/update it.
+		// BigShip: Order is ALREADY created during getRates (createDraftOrder)
+		// We just need to retrieve the system_order_id from order meta
 		
-		// 1. Ensure Courier ID is present
 		if ( empty( $shipment->courier ) ) {
 			return [ 'error' => 'No courier selected for BigShip booking' ];
 		}
-		// Note: $shipment->courier from RateNormalizer is the Name.
-		// BigShip might need an ID. 
-		// Ideally RateNormalizer should store ID in a meta field or "courier_id" property.
-		// BUT for now, assuming "courier_id" is passed if available, or we need to map name to ID?
-		// Phase-4 MVP: Assume what we get is usable, or we pass it as "courier_id" in payload if we have it.
-		// For BigShip, if 'courier_id' is needed, we should have captured it during getRates normalization.
-		// Let's rely on createDraftOrder handling the 'courier_id' if we add it to payload.
 		
-		// 2. Call Order Add/Update
-		// We'll modify createDraftOrder slightly to accept an optional 'courier_id' merge
-		// OR we just manually construct payload here to be sure.
+		// Get the system_order_id that was created during getRates
+		$system_order_id = get_post_meta( $shipment->order_id, '_zh_bigship_system_order_id', true );
 		
-		// Let's call createDraftOrder again, but we need to ensure it includes 'courier_id'.
-		// I will modify createDraftOrder to check $shipment->courier_id if I add it.
-		// Or simpler: pass it as 2nd arg? No, shipment object is better.
-		// Let's assume $shipment->courier_id holds the ID.
-		
-		$system_order_id = $this->createDraftOrder( $shipment );
-
-		if ( is_wp_error( $system_order_id ) ) {
-			return $system_order_id;
-		}
-
 		if ( ! $system_order_id ) {
-			return [ 'error' => 'Failed to get System Order ID from BigShip' ];
+			error_log( 'ZSS ERROR: No BigShip system_order_id found in meta for order ' . $shipment->order_id );
+			return [ 'error' => 'BigShip system_order_id not found. Please retry.' ];
 		}
-
-		// Success?
+		
+		error_log( 'ZSS DEBUG: Using existing BigShip system_order_id: ' . $system_order_id );
+		
 		return [
-			'shipment_id' => $system_order_id,
-			'awb_code'    => '', // BigShip specific: might need separate call or comes in response?
-			'courier_name'=> $shipment->courier
+			'shipment_id'  => $system_order_id,
+			'courier_name' => $shipment->courier
 		];
+	}
+
+	public function manifestOrder( $system_order_id, $courier_id ) {
+		// Step 3: Manifest the order with selected courier
+		// REQUIRED before calling generateAWB
+		
+		$payload = [
+			'system_order_id' => (int) $system_order_id,
+			'courier_id'      => (int) $courier_id
+		];
+		
+		error_log( 'ZSS DEBUG: BigShip manifestOrder payload: ' . print_r( $payload, true ) );
+		
+		$response = $this->client->post( 'order/manifest/single', $payload );
+		
+		error_log( 'ZSS DEBUG: BigShip manifestOrder response: ' . print_r( $response, true ) );
+		
+		if ( isset( $response['success'] ) && $response['success'] === true ) {
+			return [ 'status' => 'success', 'message' => $response['message'] ?? 'Manifested' ];
+		}
+		
+		return [ 'error' => $response['message'] ?? 'Manifest failed', 'raw' => $response ];
 	}
 
 	public function generateAWB( $shipment_id ) {
 		// BigShip Step 1: Generate AWB (shipment_data_id=1)
         // Returns master_awb, courier_id, courier_name
         
-		$response = $this->client->post( 'shipment/data', [
+		// BigShip uses POST with query params (not GET!)
+		$params = [
 			'shipment_data_id' => 1,
 			'system_order_id'  => $shipment_id
-		]);
+		];
+		
+		$response = $this->client->post( 'shipment/data', [], $params );
         
         error_log( 'ZSS DEBUG: BigShip generateAWB raw response: ' . print_r( $response, true ) );
         
@@ -307,10 +315,13 @@ class BigShipAdapter implements PlatformInterface {
 		// BigShip Step 2: Generate Label (shipment_data_id=2)
         // Returns Base64 PDF in res_FileContent
         
-		$response = $this->client->post( 'shipment/data', [
+		// BigShip uses POST with query params (not GET!)
+		$params = [
 			'shipment_data_id' => 2,
 			'system_order_id'  => $shipment_id
-		]);
+		];
+		
+		$response = $this->client->post( 'shipment/data', [], $params );
         
         error_log( 'ZSS DEBUG: BigShip getLabel raw response: ' . print_r( $response, true ) );
         
