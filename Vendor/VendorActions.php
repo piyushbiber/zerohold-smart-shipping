@@ -347,9 +347,15 @@ class VendorActions {
 							update_post_meta( $order_id, '_zh_shiprocket_pickup_status', 1 );
 							update_post_meta( $order_id, '_zh_shiprocket_pickup_response', wp_json_encode( $pickup_response ) );
 							error_log( 'ZSS AJAX: Pickup scheduled successfully' );
+						} elseif ( ! is_wp_error( $pickup_response ) && isset( $pickup_response['message'] ) && stripos( $pickup_response['message'], 'Already in Pickup Queue' ) !== false ) {
+							// Pickup was already scheduled (Shiprocket returns 400 for this)
+							// We treat this as success for UI purposes
+							update_post_meta( $order_id, '_zh_shiprocket_pickup_status', 1 );
+							update_post_meta( $order_id, '_zh_shiprocket_pickup_response', wp_json_encode( $pickup_response ) );
+							error_log( 'ZSS AJAX: Pickup already in queue - marking as scheduled' );
 						} else {
 							// Pickup failed - log but don't block the label generation success
-							$error_msg = is_wp_error( $pickup_response ) ? $pickup_response->get_error_message() : 'Unknown error';
+							$error_msg = is_wp_error( $pickup_response ) ? $pickup_response->get_error_message() : ( $pickup_response['message'] ?? 'Unknown error' );
 							error_log( 'ZSS AJAX WARNING: Pickup scheduling failed: ' . $error_msg );
 							update_post_meta( $order_id, '_zh_shiprocket_pickup_status', 0 );
 							update_post_meta( $order_id, '_zh_shiprocket_pickup_error', $error_msg );
