@@ -49,43 +49,46 @@ class DokanShipmentSync {
 		}
 
 		// 3. Prepare Data for Insertion
-		$table_name = $wpdb->prefix . 'dokan_vendor_order_shipment';
+		// The table name discovered via investigation
+		$table_name = $wpdb->prefix . 'dokan_shipping_tracking';
 		
 		// Defensive: Check if table exists before inserting
 		if ( $wpdb->get_var( "SHOW TABLES LIKE '$table_name'" ) != $table_name ) {
-			error_log( "ZSS WARNING: Dokan Shipment table ($table_name) does not exist. Sync skipped. Please enable Shipping Status module in Dokan." );
+			error_log( "ZSS WARNING: Dokan Shipping Tracking table ($table_name) does not exist. Sync skipped." );
 			return false;
 		}
 
 		$data = [
-			'order_id'        => $order_id,
-			'vendor_id'       => $vendor_id,
-			'provider'        => 'sp-other', // Always "Other"
+			'order_id'        => (int) $order_id,
+			'seller_id'       => (int) $vendor_id,
+			'provider'        => 'sp-other',
 			'provider_label'  => $courier,
-			'number'          => $awb,
-			'date'            => current_time( 'mysql' ),
-			'shipping_status' => 'ss_on_the_way', // "On the way"
-			'status_label'    => __( 'On the way', 'dokan' ),
 			'provider_url'    => $tracking_url,
+			'number'          => $awb,
+			'date'            => current_time( 'M j, Y' ), // Human readable usually for this table
+			'shipping_status' => 'ss_on_the_way',
+			'status_label'    => __( 'On the way', 'dokan' ),
+			'is_notify'       => 'no',
 			'item_qty'        => wp_json_encode( $item_qty_map ),
-			'comments'        => '',
+			'status'          => 1,
 		];
 
 		$format = [
 			'%d', // order_id
-			'%d', // vendor_id
+			'%d', // seller_id
 			'%s', // provider
 			'%s', // provider_label
+			'%s', // provider_url
 			'%s', // number
 			'%s', // date
 			'%s', // shipping_status
 			'%s', // status_label
-			'%s', // provider_url
+			'%s', // is_notify
 			'%s', // item_qty
-			'%s', // comments
+			'%d', // status
 		];
 
-		error_log( "ZSS DEBUG: Syncing shipment to Dokan for order $order_id" );
+		error_log( "ZSS DEBUG: Syncing shipment to Dokan ($table_name) for order $order_id" );
 		
 		$result = $wpdb->insert( $table_name, $data, $format );
 
@@ -101,32 +104,6 @@ class DokanShipmentSync {
 		$shipment_id = $wpdb->insert_id;
 		error_log( "ZSS SUCCESS: Dokan shipment created (ID: $shipment_id) for order $order_id" );
 
-		// 4. Add Shipment Timeline Update (Optional but better for UI consistency)
-		self::add_timeline_update( $order_id, $shipment_id, $courier, $awb );
-
 		return $shipment_id;
-	}
-
-	/**
-	 * Add an entry to the shipment timeline.
-	 */
-	private static function add_timeline_update( $order_id, $shipment_id, $courier, $awb ) {
-		global $wpdb;
-		$table_name = $wpdb->prefix . 'dokan_vendor_order_shipment_info';
-		
-		// Check if table exists (Dokan Pro timeline table)
-		if ( $wpdb->get_var( "SHOW TABLES LIKE '$table_name'" ) != $table_name ) {
-			return;
-		}
-
-		$data = [
-			'order_id'    => $order_id,
-			'shipment_id' => $shipment_id,
-			'comment_id'  => 0, // Not linked to a standard comment
-			'status'      => 'ss_on_the_way',
-			'date'        => current_time( 'mysql' ),
-		];
-
-		$wpdb->insert( $table_name, $data, [ '%d', '%d', '%d', '%s', '%s' ] );
 	}
 }
