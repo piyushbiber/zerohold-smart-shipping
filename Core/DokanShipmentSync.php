@@ -51,6 +51,12 @@ class DokanShipmentSync {
 		// 3. Prepare Data for Insertion
 		$table_name = $wpdb->prefix . 'dokan_vendor_order_shipment';
 		
+		// Defensive: Check if table exists before inserting
+		if ( $wpdb->get_var( "SHOW TABLES LIKE '$table_name'" ) != $table_name ) {
+			error_log( "ZSS WARNING: Dokan Shipment table ($table_name) does not exist. Sync skipped. Please enable Shipping Status module in Dokan." );
+			return false;
+		}
+
 		$data = [
 			'order_id'        => $order_id,
 			'vendor_id'       => $vendor_id,
@@ -83,8 +89,12 @@ class DokanShipmentSync {
 		
 		$result = $wpdb->insert( $table_name, $data, $format );
 
+		error_log( "ZSS DEBUG: wpdb->insert result: " . var_export( $result, true ) );
+
 		if ( $result === false ) {
-			error_log( "ZSS ERROR: Failed to insert shipment into $table_name. Error: " . $wpdb->last_error );
+			error_log( "ZSS ERROR: Failed to insert shipment into $table_name." );
+			error_log( "ZSS ERROR: Last Error: " . $wpdb->last_error );
+			error_log( "ZSS ERROR: Table attempted: $table_name" );
 			return false;
 		}
 
