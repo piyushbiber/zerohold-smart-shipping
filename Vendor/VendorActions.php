@@ -364,6 +364,25 @@ class VendorActions {
 						}
 					}
 
+					// Phase-3: Sync with Dokan Shipment UI
+					try {
+						$sync_awb = $awb_code;
+						$sync_courier = $winner->courier;
+						$sync_url = '';
+
+						if ( $winner_platform === 'shiprocket' ) {
+							$sync_url = 'https://shiprocket.co/tracking/' . $sync_awb;
+						} elseif ( $winner_platform === 'bigship' ) {
+							$sync_courier = $awb_response['courier_name'] ?? $winner->courier;
+							$sync_url = 'https://bigship.in/tracking?tracking_number=' . $sync_awb;
+						}
+
+						error_log( "ZSS AJAX: Triggering DokanShipmentSync for $winner_platform" );
+						\Zerohold\Shipping\Core\DokanShipmentSync::sync_shipment( $order_id, $sync_awb, $sync_courier, $sync_url );
+					} catch ( \Exception $e ) {
+						error_log( "ZSS ERROR: DokanShipmentSync failed: " . $e->getMessage() );
+					}
+
 					wp_send_json_success( 'Label generated successfully' );
 				} else {
 					error_log( 'ZSS AJAX ERROR: label_url not in response' );
