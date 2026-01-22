@@ -10,54 +10,95 @@ use Zerohold\Shipping\Models\Shipment;
 
 class OrderMapper {
 
-	public function map( $order ) {
+	public function map( $order, $direction = 'forward' ) {
 
 		$shipment = new Shipment();
+		$shipment->direction = $direction;
 
-		// ============= Retailer (Delivery) =============
-		$shipment->to_first_name = $order->get_shipping_first_name();
-		$shipment->to_last_name  = $order->get_shipping_last_name();
-		$shipment->to_contact  = trim( $shipment->to_first_name . ' ' . $shipment->to_last_name );
-		$shipment->to_store    = $order->get_meta( '_shipping_store_name' ); // optional
-		$shipment->to_phone    = $order->get_billing_phone() ?: $order->get_shipping_phone();
-		$shipment->to_address1 = $order->get_shipping_address_1();
-		$shipment->to_address2 = $order->get_shipping_address_2();
-		$shipment->to_city     = $order->get_shipping_city();
-		$shipment->to_state    = $order->get_shipping_state();
-		$shipment->to_pincode  = $order->get_shipping_postcode();
-		$shipment->to_country  = $order->get_shipping_country();
-
-		// ============= Vendor (Pickup) =============
-		$vendor_id = 0;
-		foreach ( $order->get_items() as $item ) {
-			$product_id = $item->get_product_id();
-			$vendor_id  = \get_post_field( 'post_author', $product_id );
-			if ( $vendor_id ) {
-				break;
+		// ============= Delivery (Destination) =============
+		if ( $direction === 'return' ) {
+			// Destination is the VENDOR
+			$vendor_id = 0;
+			foreach ( $order->get_items() as $item ) {
+				$product_id = $item->get_product_id();
+				$vendor_id  = \get_post_field( 'post_author', $product_id );
+				if ( $vendor_id ) break;
 			}
+			$vendor = function_exists( 'dokan' ) ? \dokan()->vendor->get( $vendor_id ) : null;
+			$store  = $vendor ? $vendor->get_shop_info() : [];
+
+			$shipment->to_store    = $store['store_name'] ?? '';
+			$shipment->to_contact  = $store['store_name'] ?? '';
+			$shipment->to_phone    = $store['phone'] ?? '';
+			$shipment->to_address1 = $store['address']['street_1'] ?? '';
+			$shipment->to_address2 = $store['address']['street_2'] ?? '';
+			$shipment->to_city     = $store['address']['city'] ?? '';
+			$shipment->to_state    = $store['address']['state'] ?? '';
+			$shipment->to_pincode  = $store['address']['zip'] ?? '';
+			$shipment->to_country  = $store['address']['country'] ?? 'IN';
+			$shipment->vendor_id   = $vendor_id;
+
+		} else {
+			// Normal Forward Shipment: Destination is RETAILER
+			$shipment->to_first_name = $order->get_shipping_first_name();
+			$shipment->to_last_name  = $order->get_shipping_last_name();
+			$shipment->to_contact  = trim( $shipment->to_first_name . ' ' . $shipment->to_last_name );
+			$shipment->to_store    = $order->get_meta( '_shipping_store_name' ); 
+			$shipment->to_phone    = $order->get_billing_phone() ?: $order->get_shipping_phone();
+			$shipment->to_address1 = $order->get_shipping_address_1();
+			$shipment->to_address2 = $order->get_shipping_address_2();
+			$shipment->to_city     = $order->get_shipping_city();
+			$shipment->to_state    = $order->get_shipping_state();
+			$shipment->to_pincode  = $order->get_shipping_postcode();
+			$shipment->to_country  = $order->get_shipping_country();
 		}
 
-		$vendor = function_exists( 'dokan' ) ? \dokan()->vendor->get( $vendor_id ) : null;
-		$store  = $vendor ? $vendor->get_shop_info() : [];
+		// ============= Pickup (Origin) =============
+		if ( $direction === 'return' ) {
+			// Origin is the RETAILER
+			$shipment->from_store    = 'Customer_' . $order->get_id();
+			$shipment->from_contact  = trim( $order->get_shipping_first_name() . ' ' . $order->get_shipping_last_name() );
+			$shipment->from_phone    = $order->get_billing_phone() ?: $order->get_shipping_phone();
+			$shipment->from_address1 = $order->get_shipping_address_1();
+			$shipment->from_address2 = $order->get_shipping_address_2();
+			$shipment->from_city     = $order->get_shipping_city();
+			$shipment->from_state    = $order->get_shipping_state();
+			$shipment->from_pincode  = $order->get_shipping_postcode();
+			$shipment->from_country  = $order->get_shipping_country();
+			
+			// Needs to be identified as a "Retailer Pickup" for WarehouseManager
+			$shipment->is_retailer_pickup = true;
+			$shipment->retailer_phone     = $shipment->from_phone;
 
-		$shipment->from_store    = $store['store_name'] ?? '';
-		$shipment->from_contact  = $store['store_name'] ?? '';
-		$shipment->from_phone    = $store['phone'] ?? '';
-		$shipment->from_address1 = $store['address']['street_1'] ?? '';
-		$shipment->from_address2 = $store['address']['street_2'] ?? '';
-		$shipment->from_city     = $store['address']['city'] ?? '';
-		$shipment->from_state    = $store['address']['state'] ?? '';
-		$shipment->from_pincode  = $store['address']['zip'] ?? '';
-		$shipment->from_state    = $store['address']['state'] ?? '';
-		$shipment->from_pincode  = $store['address']['zip'] ?? '';
-		$shipment->from_country  = $store['address']['country'] ?? 'IN';
-		$shipment->vendor_id     = $vendor_id;
+		} else {
+			// Normal Forward Shipment: Origin is VENDOR
+			$vendor_id = 0;
+			foreach ( $order->get_items() as $item ) {
+				$product_id = $item->get_product_id();
+				$vendor_id  = \get_post_field( 'post_author', $product_id );
+				if ( $vendor_id ) break;
+			}
+
+			$vendor = function_exists( 'dokan' ) ? \dokan()->vendor->get( $vendor_id ) : null;
+			$store  = $vendor ? $vendor->get_shop_info() : [];
+
+			$shipment->from_store    = $store['store_name'] ?? '';
+			$shipment->from_contact  = $store['store_name'] ?? '';
+			$shipment->from_phone    = $store['phone'] ?? '';
+			$shipment->from_address1 = $store['address']['street_1'] ?? '';
+			$shipment->from_address2 = $store['address']['street_2'] ?? '';
+			$shipment->from_city     = $store['address']['city'] ?? '';
+			$shipment->from_state    = $store['address']['state'] ?? '';
+			$shipment->from_pincode  = $store['address']['zip'] ?? '';
+			$shipment->from_country  = $store['address']['country'] ?? 'IN';
+			$shipment->vendor_id     = $vendor_id;
+		}
 
 		// ============= Order-Level Info =============
 		$shipment->order_id       = $order->get_id();
 		$shipment->order_date     = $order->get_date_created() ? $order->get_date_created()->date( 'Y-m-d H:i' ) : current_time( 'Y-m-d H:i' );
 		$shipment->declared_value = $order->get_total();
-		$shipment->payment_mode   = 'Prepaid';
+		$shipment->payment_mode   = 'Prepaid'; // Returns are always prepaid for logistics
 
 		// ============= Weight & Qty =============
 		$total_weight = 0;

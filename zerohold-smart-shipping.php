@@ -78,6 +78,10 @@ class ZeroHoldSmartShipping {
 		// Initialize Vendor UI (shipping buttons)
 		new Vendor\VendorUI();
 
+		// Initialize Return Shipping MVP
+		new Admin\ReturnAdminUI();
+		new Core\ReturnManager();
+
 		// Initialize Platforms (for testing auth)
 		new Platforms\ShiprocketAdapter();
 

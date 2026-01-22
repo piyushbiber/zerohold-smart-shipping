@@ -56,6 +56,12 @@ class Shipment {
 	public $height;
 	public $volumetric_weight;
 
+	// ============= Return / Reverse Info =============
+	public $direction = 'forward'; // 'forward' or 'return'
+	public $is_retailer_pickup = false;
+	public $retailer_phone;
+	public $retailer_id;
+
 	// ============= Future Proofing =============
 	public $items = [];
 }

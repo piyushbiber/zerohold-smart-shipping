@@ -19,32 +19,49 @@ class WarehouseManager {
 	 * @return string|false Warehouse ID or false on failure
 	 */
 	public static function ensureWarehouse( $shipment, $platform ) {
-		if ( empty( $shipment->vendor_id ) ) {
-			return false; // Cannot associate
-		}
-
 		$meta_key = '';
 		$adapter  = null;
+		$user_id  = $shipment->vendor_id;
+		$is_retailer = ! empty( $shipment->is_retailer_pickup );
 
 		if ( $platform === 'shiprocket' ) {
-			$meta_key = '_sr_pickup_location';
+			$meta_key = $is_retailer ? '_zh_rt_sr_pickup_location' : '_sr_pickup_location';
 			$adapter  = new ShiprocketAdapter();
 		} elseif ( $platform === 'bigship' ) {
-			$meta_key = '_bs_warehouse_id'; // User requested this key
+			$meta_key = $is_retailer ? '_zh_rt_bs_warehouse_id' : '_bs_warehouse_id';
 			$adapter  = new BigShipAdapter();
 		} else {
 			return false;
 		}
 
-		// 1. Check Freezer (DB)
-		$warehouse_id = get_user_meta( $shipment->vendor_id, $meta_key, true );
-		if ( ! empty( $warehouse_id ) ) {
-			return $warehouse_id;
+		// If retailer, we might not have a vendor_id. We use a unique key for the retailer.
+		// Use phone number or customer user id.
+		$storage_id = $user_id;
+		if ( $is_retailer ) {
+			$storage_id = $shipment->retailer_id ?: 'RT_' . preg_replace('/[^0-9]/', '', $shipment->retailer_phone);
+			// For Retailers, we might want to store in a global option or order meta if no user ID.
+			// Implementing a search for user by phone for better reuse.
+			if ( is_string($storage_id) && strpos($storage_id, 'RT_') === 0 ) {
+				$warehouse_id = get_option( 'zh_rt_wh_' . $storage_id . '_' . $platform );
+				if ( ! empty( $warehouse_id ) ) return $warehouse_id;
+			}
 		}
 
-		// 2. Create Warehouse
-		// We expect the adapter to have a createWarehouse method.
-		// If not, we log error.
+		// 1. Check Freezer (DB/User Meta)
+		if ( is_numeric( $storage_id ) ) {
+			$warehouse_id = get_user_meta( $storage_id, $meta_key, true );
+			if ( ! empty( $warehouse_id ) ) {
+				return $warehouse_id;
+			}
+		}
+
+		// 2. Prepare Retailer Naming for Adapter
+		if ( $is_retailer ) {
+			$phone = preg_replace( '/[^0-9]/', '', $shipment->retailer_phone );
+			$shipment->from_store = 'RT_CUST_' . $phone . '_WH';
+		}
+
+		// 3. Create Warehouse
 		if ( ! method_exists( $adapter, 'createWarehouse' ) ) {
 			error_log( "ZSS ERROR: Adapter for $platform does not have createWarehouse method." );
 			return false;
@@ -53,8 +70,12 @@ class WarehouseManager {
 		$new_id = $adapter->createWarehouse( $shipment );
 
 		if ( $new_id && ! is_wp_error( $new_id ) ) {
-			// 3. Freeze (Store)
-			update_user_meta( $shipment->vendor_id, $meta_key, $new_id );
+			// 4. Freeze (Store)
+			if ( is_numeric( $storage_id ) ) {
+				update_user_meta( $storage_id, $meta_key, $new_id );
+			} elseif ( is_string($storage_id) && strpos($storage_id, 'RT_') === 0 ) {
+				update_option( 'zh_rt_wh_' . $storage_id . '_' . $platform, $new_id );
+			}
 			return $new_id;
 		}
 
