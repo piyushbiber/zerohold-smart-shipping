@@ -9,8 +9,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 class ReturnAdminUI {
 
 	public function __construct() {
-		// Add button to Admin Order Detail page
+		error_log( "ZSS DEBUG: ReturnAdminUI Initialized" );
+		// Add button to Admin Order Detail page (different locations for safety)
 		add_action( 'woocommerce_admin_order_data_after_order_details', [ $this, 'add_return_shipping_button' ] );
+		add_action( 'woocommerce_admin_order_data_after_billing_address', [ $this, 'add_return_shipping_button' ] );
 		
 		// Enqueue scripts helper
 		add_action( 'admin_enqueue_scripts', [ $this, 'enqueue_admin_assets' ] );
@@ -23,8 +25,9 @@ class ReturnAdminUI {
 		$order_id = $order->get_id();
 		$status   = $order->get_status();
 		
+		error_log( "ZSS DEBUG: Checking Return Button for Order #$order_id. Status: '$status'" );
+
 		// 1. Logic Guard: Delivered (Completed) OR Refund/Return Statuses
-		// WP Swings typical custom statuses found in logs: 'return-approved', 'refund-requested'
 		$allowed_statuses = [ 
 			'completed', 
 			'processing', 
@@ -35,12 +38,18 @@ class ReturnAdminUI {
 		];
 		
 		if ( ! in_array( $status, $allowed_statuses ) ) {
+			error_log( "ZSS DEBUG: Status '$status' NOT in allowed list: " . implode(', ', $allowed_statuses) );
 			return;
 		}
 
 		// 2. Logic Guard: WP Swings Refund/Return Request exists
+		// DEBUG: Log all meta keys to find WP Swings keys
+		$all_meta = get_post_meta( $order_id );
+		error_log( "ZSS DEBUG: All Meta Keys for Order #$order_id: " . implode( ', ', array_keys( $all_meta ) ) );
+
 		if ( ! $this->has_wp_swings_refund_request( $order_id ) ) {
-			return;
+			error_log( "ZSS DEBUG: has_wp_swings_refund_request returned FALSE. (Temporarily bypassing for button rendering test)" );
+			// return; // TEMPORARILY DISABLED TO ENSURE BUTTON RENDERS
 		}
 
 		error_log( "ZSS DEBUG: Logic guards passed for Order #$order_id. Rendering button." );
