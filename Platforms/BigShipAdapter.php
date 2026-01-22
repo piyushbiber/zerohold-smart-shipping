@@ -34,22 +34,37 @@ class BigShipAdapter implements PlatformInterface {
 		
 		// Map Items to "product_details" (inside box_details)
 		$product_details = [];
-        $total_items_qty = 0;
-        
-		foreach ( $shipment->items as $item ) {
-            // Docs require product_category enum. 
-            // We'll hardcode "Others" or mapping if available. 
-            // Using "Others" as safest default from docs example.
+		$total_items_qty = 0;
+
+		$is_return = ! empty( $shipment->direction ) && $shipment->direction === 'return';
+
+		if ( $is_return ) {
+			// AGGREGATION FOR RETURNS: BigShip requires exact sum match.
+			// Collapsing into 1 line avoids rounding/summation mismatches.
 			$product_details[] = [
-				'product_category'     => 'Others', 
-				'product_sub_category' => 'General', // Required? Docs say string
-				'product_name'         => substr( $item['name'], 0, 50 ),
-				'product_quantity'     => (int) $item['qty'],
-				'each_product_invoice_amount'     => (float) $shipment->declared_value / max( 1, $shipment->qty ), // Per item price approximation
-				'each_product_collectable_amount' => 0, // Prepaid logic for now (see payment_type below)
-				'hsn'                  => '',
+				'product_category'                => 'Others',
+				'product_sub_category'            => 'General',
+				'product_name'                    => 'Return Items (Order #' . $shipment->order_id . ')',
+				'product_quantity'                => 1,
+				'each_product_invoice_amount'     => (float) $shipment->declared_value,
+				'each_product_collectable_amount' => 0,
+				'hsn'                             => '',
 			];
-            $total_items_qty += (int) $item['qty'];
+			$total_items_qty = 1;
+		} else {
+			// Normal Forward Shipment mapping
+			foreach ( $shipment->items as $item ) {
+				$product_details[] = [
+					'product_category'                => 'Others',
+					'product_sub_category'            => 'General',
+					'product_name'                    => substr( $item['name'], 0, 50 ),
+					'product_quantity'                => (int) $item['qty'],
+					'each_product_invoice_amount'     => (float) $shipment->declared_value / max( 1, $shipment->qty ),
+					'each_product_collectable_amount' => 0,
+					'hsn'                             => '',
+				];
+				$total_items_qty += (int) $item['qty'];
+			}
 		}
 
         // Logic for Payment Type
