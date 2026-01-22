@@ -23,18 +23,24 @@ class ReturnAdminUI {
 		$order_id = $order->get_id();
 		$status   = $order->get_status();
 		
+		error_log( "ZSS DEBUG: Checking Return Button for Order #$order_id with Status: $status" );
+
 		// 1. Logic Guard: Delivered (Completed) OR Refund Requested
 		// WP Swings typical custom status is 'refund-requested'
-		$allowed_statuses = [ 'completed', 'refund-requested', 'wc-refund-requested' ];
+		$allowed_statuses = [ 'completed', 'processing', 'refund-requested', 'wc-refund-requested' ];
 		
 		if ( ! in_array( $status, $allowed_statuses ) ) {
+			error_log( "ZSS DEBUG: Status '$status' not in allowed list." );
 			return;
 		}
 
 		// 2. Logic Guard: WP Swings Refund Request exists
 		if ( ! $this->has_wp_swings_refund_request( $order_id ) ) {
+			error_log( "ZSS DEBUG: No WP Swings Refund Request found for Order #$order_id" );
 			return;
 		}
+
+		error_log( "ZSS DEBUG: Logic guards passed for Order #$order_id. Rendering button." );
 
 		// 3. Logic Guard: Already generated?
 		$return_shipment_id = get_post_meta( $order_id, '_zh_return_shipment_id', true );
@@ -99,17 +105,15 @@ class ReturnAdminUI {
 	 * Checks if a refund request exists in WP Swings for this order.
 	 */
 	private function has_wp_swings_refund_request( $order_id ) {
-		// Based on user feedback and screenshot: 
-		// WP Swings uses _wps_refund_request_status_id or similar.
-		
 		$all_meta = get_post_meta( $order_id );
 		foreach ( $all_meta as $key => $values ) {
-			// Check for various wps keys (rma, refund, etc)
 			if ( strpos( $key, '_wps_' ) !== false ) {
+				error_log( "ZSS DEBUG: Found WP Swings meta key: $key" );
 				return true; 
 			}
 		}
 
+		error_log( "ZSS DEBUG: No meta keys starting with _wps_ found for Order #$order_id" );
 		return false; 
 	}
 
