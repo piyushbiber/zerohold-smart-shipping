@@ -21,15 +21,18 @@ class ReturnAdminUI {
 	 */
 	public function add_return_shipping_button( $order ) {
 		$order_id = $order->get_id();
+		$status   = $order->get_status();
 		
-		// 1. Logic Guard: Only Delivered (Completed)
-		if ( $order->get_status() !== 'completed' ) {
+		// 1. Logic Guard: Delivered (Completed) OR Refund Requested
+		// WP Swings typical custom status is 'refund-requested'
+		$allowed_statuses = [ 'completed', 'refund-requested', 'wc-refund-requested' ];
+		
+		if ( ! in_array( $status, $allowed_statuses ) ) {
 			return;
 		}
 
 		// 2. Logic Guard: WP Swings Refund Request exists
 		if ( ! $this->has_wp_swings_refund_request( $order_id ) ) {
-			// Optional: Show nothing or a disabled state if debugging
 			return;
 		}
 
@@ -37,7 +40,7 @@ class ReturnAdminUI {
 		$return_shipment_id = get_post_meta( $order_id, '_zh_return_shipment_id', true );
 		if ( $return_shipment_id ) {
 			echo '<p class="form-field form-field-wide" style="border-top: 1px solid #eee; padding-top: 10px;">';
-			echo '<strong>Return Shipping:</strong> <span class="status-badge" style="background:#27ae60; color:#fff; padding:2px 8px; border-radius:3px;">GENERTED</span>';
+			echo '<strong>Return Shipping:</strong> <span class="status-badge" style="background:#27ae60; color:#fff; padding:2px 8px; border-radius:3px;">GENERATED</span>';
 			echo '<br><small>ID: ' . esc_html( $return_shipment_id ) . '</small>';
 			echo '</p>';
 			return;
@@ -96,21 +99,17 @@ class ReturnAdminUI {
 	 * Checks if a refund request exists in WP Swings for this order.
 	 */
 	private function has_wp_swings_refund_request( $order_id ) {
-		// Based on user feedback: WP Swings uses Refund Request flow.
-		// We'll check for meta or existence of RMA request.
-		// Standard WP Swings RMA meta is often _wps_rma_refund_request_status or similar.
-		// Let's check common keys or a generic 'exists' check.
+		// Based on user feedback and screenshot: 
+		// WP Swings uses _wps_refund_request_status_id or similar.
 		
-		// If we don't have exact table name, we'll try to find any meta starting with _wps_rma
 		$all_meta = get_post_meta( $order_id );
 		foreach ( $all_meta as $key => $values ) {
-			if ( strpos( $key, '_wps_rma' ) !== false ) {
+			// Check for various wps keys (rma, refund, etc)
+			if ( strpos( $key, '_wps_' ) !== false ) {
 				return true; 
 			}
 		}
 
-		// Also check if WP Swings has a specific flag for "Requested"
-		// Placeholder for actual implementation if user provides more DB details
 		return false; 
 	}
 
