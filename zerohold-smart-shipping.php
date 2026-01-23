@@ -81,6 +81,7 @@ class ZeroHoldSmartShipping {
 		// Initialize Return Shipping MVP
 		new Admin\ReturnAdminUI();
 		new Core\ReturnManager();
+		new Frontend\RetailerReturnUI();
 
 		// Initialize Platforms (for testing auth)
 		new Platforms\ShiprocketAdapter();
