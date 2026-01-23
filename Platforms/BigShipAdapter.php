@@ -431,7 +431,9 @@ class BigShipAdapter implements PlatformInterface {
 
 		// Naming: Unique per vendor/retailer
 		// We use the friendly from_store name for label presentation.
-		$safe_wh_name = $this->sanitizeBigShipString( $shipment->from_store, 40 );
+		// For Retailers, WarehouseManager sends a constructed friendly ID.
+		$name_source = ! empty( $shipment->warehouse_internal_id ) ? $shipment->warehouse_internal_id : $shipment->from_store;
+		$safe_wh_name = $this->sanitizeBigShipString( $name_source, 40 );
 		
 		if ( empty( $safe_wh_name ) ) {
 			$safe_wh_name = 'ZH-WH-' . ( $shipment->vendor_id ?? $shipment->retailer_id );
