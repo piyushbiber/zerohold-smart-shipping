@@ -111,14 +111,9 @@ class RateNormalizer {
              $courier_name = trim( $response['courier_company'] );
         }
 
-        // DEBUG: Inspect extraction
-        // error_log( "ZSS DEBUG: normalizeBigShip Input Keys: " . implode(',', array_keys($response)) );
-        // error_log( "ZSS DEBUG: Extracted Base: $base, Courier: $courier_name" );
-
         // Strict Filter: Reject invalid rates
         // We reject if base is 0 OR if courier is empty.
         if ( $base <= 0 || empty( $courier_name ) ) {
-            // error_log( "ZSS DEBUG WARNING: Dropping Invalid BigShip Rate. Base: $base, Courier: $courier_name" );
             return null;
         }
 
@@ -132,7 +127,6 @@ class RateNormalizer {
 		]);
         
         // Verify Object
-        // error_log( "ZSS DEBUG: Created Quote - Platform: {$quote->platform}, Base: {$quote->base}" );
         
         return $quote;
 	}

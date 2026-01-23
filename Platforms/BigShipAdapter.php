@@ -177,11 +177,7 @@ class BigShipAdapter implements PlatformInterface {
             ]
         ];
 		
-		// Log Payload for debugging
-		error_log( 'ZSS DEBUG: BigShip Order Payload: ' . print_r( $payload, true ) );
-
 		$response = $this->client->post( 'order/add/single', $payload );
-        error_log( 'ZSS DEBUG: BigShip Order Response: ' . print_r( $response, true ) );
 
 		if ( is_wp_error( $response ) ) {
 			return $response;
@@ -210,14 +206,11 @@ class BigShipAdapter implements PlatformInterface {
 
 	public function getRates( $shipment ) {
 		// 1. Get System ID (Create Draft)
-		error_log( 'ZSS DEBUG: BigShipAdapter::createDraftOrder calling...' );
 		$system_order_id = $this->createDraftOrder( $shipment );
 
 		if ( ! $system_order_id || is_wp_error( $system_order_id ) ) {
-			error_log( 'ZSS DEBUG ERROR: BigShip createDraftOrder failed or empty. Response: ' . print_r( $system_order_id, true ) );
 			return [];
 		}
-		error_log( 'ZSS DEBUG: BigShip System Order ID: ' . $system_order_id );
 	
 	// Store system_order_id for later use in createOrder
 	update_post_meta( $shipment->order_id, '_zh_bigship_system_order_id', $system_order_id );
@@ -229,12 +222,9 @@ class BigShipAdapter implements PlatformInterface {
 			'system_order_id'   => $system_order_id,
 		];
 
-		error_log( 'ZSS DEBUG: BigShip fetching rates with query: ' . print_r( $query, true ) );
 		$response = $this->client->get( 'order/shipping/rates', $query );
-		error_log( 'ZSS DEBUG: BigShip raw rate response: ' . print_r( $response, true ) );
 
 		if ( is_wp_error( $response ) || empty( $response['data'] ) ) {
-			error_log( 'ZSS DEBUG ERROR: BigShip response invalid or empty data' );
 			return [];
 		}
 
@@ -253,7 +243,6 @@ class BigShipAdapter implements PlatformInterface {
 
             // Defensive: Ensure we have an Object (user reported Array issues)
             if ( is_array( $rate_obj ) ) {
-                error_log( 'ZSS DEBUG WARNING: normalizeBigShip returned Array. Converting to RateQuote.' );
                 $rate_obj = new \Zerohold\Shipping\Models\RateQuote( $rate_obj );
             }
             
@@ -263,7 +252,6 @@ class BigShipAdapter implements PlatformInterface {
         // Extra check (optional but safe)
 		// $rates = array_filter($rates);
 
-		error_log( 'ZSS DEBUG: BigShip normalized rates count: ' . count( $rates ) );
 
 		return $rates;  // Return rates DIRECTLY (VendorActions adds platform key)
 	}
@@ -280,11 +268,9 @@ class BigShipAdapter implements PlatformInterface {
 		$system_order_id = get_post_meta( $shipment->order_id, '_zh_bigship_system_order_id', true );
 		
 		if ( ! $system_order_id ) {
-			error_log( 'ZSS ERROR: No BigShip system_order_id found in meta for order ' . $shipment->order_id );
 			return [ 'error' => 'BigShip system_order_id not found. Please retry.' ];
 		}
 		
-		error_log( 'ZSS DEBUG: Using existing BigShip system_order_id: ' . $system_order_id );
 		
 		return [
 			'shipment_id'  => $system_order_id,
@@ -301,11 +287,9 @@ class BigShipAdapter implements PlatformInterface {
 			'courier_id'      => (int) $courier_id
 		];
 		
-		error_log( 'ZSS DEBUG: BigShip manifestOrder payload: ' . print_r( $payload, true ) );
 		
 		$response = $this->client->post( 'order/manifest/single', $payload );
 		
-		error_log( 'ZSS DEBUG: BigShip manifestOrder response: ' . print_r( $response, true ) );
 		
 		if ( isset( $response['success'] ) && $response['success'] === true ) {
 			return [ 'status' => 'success', 'message' => $response['message'] ?? 'Manifested' ];
@@ -326,7 +310,6 @@ class BigShipAdapter implements PlatformInterface {
 		
 		$response = $this->client->post( 'shipment/data', [], $params );
         
-        error_log( 'ZSS DEBUG: BigShip generateAWB raw response: ' . print_r( $response, true ) );
         
         if ( ! empty( $response['data']['master_awb'] ) ) {
             return [
@@ -353,7 +336,6 @@ class BigShipAdapter implements PlatformInterface {
 		
 		$response = $this->client->post( 'shipment/data', [], $params );
         
-        error_log( 'ZSS DEBUG: BigShip getLabel raw response: ' . print_r( $response, true ) );
         
         if ( isset( $response['data']['res_FileContent'] ) ) {
             $base64_content = $response['data']['res_FileContent'];
@@ -455,7 +437,6 @@ class BigShipAdapter implements PlatformInterface {
 		$status      = get_user_meta( $shipment->vendor_id, '_zh_warehouse_status', true );
 
 		if ( $existing_id && $status === 'NEED_REFRESH' ) {
-			error_log( "ZSS DEBUG: Attempting BigShip Warehouse UPDATE for ID: $existing_id" );
 			
 			// Using 'warehouse/edit' assume standard endpoint naming
 			// Only update if we have the ID to pass (usually required in payload or param)
@@ -465,19 +446,16 @@ class BigShipAdapter implements PlatformInterface {
 			$update_payload['warehouse_id'] = $existing_id;      // Try both common keys
 
 			$update_res = $this->client->post( 'warehouse/edit', $update_payload );
-			error_log( 'ZSS DEBUG: BigShip Update Response: ' . print_r( $update_res, true ) );
 
 			if ( ! is_wp_error( $update_res ) && ( isset( $update_res['data'] ) || isset( $update_res['status'] ) && $update_res['status'] ) ) {
 				// Update Success
 				return $existing_id;
 			}
 			// Fallback to Create if Update fails
-			error_log( "ZSS DEBUG: Update failed, falling back to CREATE/RECOVER flow." );
 		}
 
 		// 3. CREATE LOGIC
 		$response = $this->client->post( 'warehouse/add', $payload );
-		error_log( 'ZSS DEBUG: BigShip Raw Create Response: ' . print_r( $response, true ) );
 
 		if ( is_wp_error( $response ) ) {
 			return $response;
@@ -498,12 +476,10 @@ class BigShipAdapter implements PlatformInterface {
 		
 		// If "already exist" or similar message
 		if ( stripos( $msg, 'exist' ) !== false || ( isset( $response['status'] ) && $response['status'] == false ) ) {
-			error_log( "ZSS DEBUG: Warehouse duplication detected ('$safe_wh_name'). Attempting recovery..." );
 			
 			$recovered_id = $this->fetchWarehouseIdByName( $safe_wh_name );
 			
 			if ( $recovered_id ) {
-				error_log( "ZSS DEBUG: RECOVERED BigShip Warehouse ID: $recovered_id" );
 				return $recovered_id;
 			}
 			$msg .= ' (Recovery by Name Failed)';
@@ -526,7 +502,6 @@ class BigShipAdapter implements PlatformInterface {
 		$max_pages  = 10;  // Safety break
 		
 		do {
-			error_log( "ZSS DEBUG: BigShip Fetching Warehouses Page $page_index (Target: $target_name)" );
 			
 			$response = $this->client->get( 'warehouse/get/list', [
 				'page_index' => $page_index,
@@ -534,7 +509,6 @@ class BigShipAdapter implements PlatformInterface {
 			] );
 
 			if ( is_wp_error( $response ) || empty( $response['data'] ) ) {
-				error_log( 'ZSS DEBUG ERROR: BigShip warehouse list fetch failed or empty data.' );
 				return false;
 			}
 
@@ -549,7 +523,6 @@ class BigShipAdapter implements PlatformInterface {
 				if ( strtolower( trim( $name ) ) === strtolower( trim( $target_name ) ) ) {
 					$id = $wh['warehouse_id'] ?? false;
 					if ( $id ) {
-						error_log( "ZSS DEBUG: Match Found on Page $page_index! ID: $id" );
 						return $id;
 					}
 				}
@@ -565,7 +538,6 @@ class BigShipAdapter implements PlatformInterface {
 
 		} while ( $page_index <= $max_pages );
 
-		error_log( "ZSS DEBUG: Warehouse '$target_name' not found in BigShip list." );
 		return false;
 	}
 

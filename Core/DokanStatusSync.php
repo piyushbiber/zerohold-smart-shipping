@@ -126,9 +126,6 @@ class DokanStatusSync {
 	public function handle_status_change( $order_id, $old_status, $new_status ) {
 		$clean_status = str_replace( 'wc-', '', $new_status );
 
-		// Always log to main error log so we can see it in user output
-		error_log( "ZSS DEBUG: Status Change for #{$order_id} from {$old_status} to {$new_status}" );
-
 		if ( ! isset( $this->statuses[ $clean_status ] ) ) {
 			return;
 		}
@@ -177,7 +174,6 @@ class DokanStatusSync {
 			foreach ( $broken_orders as $order ) {
 				$clean = str_replace( 'wc-', '', $order->post_status );
 				$this->update_dokan_orders_table( $order->ID, $clean );
-				error_log( "ZSS DEBUG: Repaired Dokan status for #{$order->ID} to {$clean}" );
 			}
 		}
 	}
@@ -190,8 +186,5 @@ class DokanStatusSync {
 		// If update failed (row doesn't exist), we might need to insert, but Dokan should handle that.
 		// However, let's be safe.
 		$exists = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM $table WHERE order_id = %d", $order_id ) );
-		if ( ! $exists ) {
-			error_log( "ZSS CRITICAL: Order #{$order_id} missing from dokan_orders table!" );
-		}
 	}
 }

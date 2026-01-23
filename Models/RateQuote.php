@@ -19,8 +19,6 @@ class RateQuote {
 	public $courier_id;
 
 	public function __construct( $data = [] ) {
-        // ZSS DEBUG: logging constructor input
-        // error_log( "ZSS DEBUG: RateQuote Consturct Input: " . print_r($data, true) );
         
         if ( is_object( $data ) ) {
             $data = (array) $data;
@@ -36,11 +34,8 @@ class RateQuote {
 		$this->vendor_share   = isset( $data['vendor_share'] ) ? $data['vendor_share'] : 0;
 		$this->retailer_share = isset( $data['retailer_share'] ) ? $data['retailer_share'] : 0;
         
-        // ZSS DEBUG: logging result
-        if ( $this->base > 0 || !empty($this->platform) ) {
-             // error_log( "ZSS DEBUG: RateQuote Created -> Base: {$this->base}, Platform: {$this->platform}" );
-        } else {
-             error_log( "ZSS DEBUG WARNING: RateQuote Created EMPTY -> Input was: " . print_r($data, true) );
-        }
+		if ( $this->base <= 0 && empty($this->platform) ) {
+			// Optional: Throw exception or handle empty quote
+		}
 	}
 }

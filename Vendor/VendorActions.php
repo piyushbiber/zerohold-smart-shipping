@@ -109,47 +109,6 @@ class VendorActions {
 				}
 			}
 		}
-
-		// TEMP: Visualization for validation
-		echo '<div style="font-family: sans-serif; padding: 20px; background: #f9f9f9; border: 1px solid #ddd; border-radius: 8px; margin: 20px;">';
-		echo '<h2 style="color: #2271b1; border-bottom: 2px solid #2271b1; padding-bottom: 10px;">ZSS Push Result</h2>';
-		echo '<p><strong>Order ID:</strong> ' . esc_html( $order_id ) . '</p>';
-		echo '<p><strong>Platform:</strong> ' . esc_html( ucfirst( $winner_platform ) ) . '</p>';
-		echo '<p><strong>Courier:</strong> ' . esc_html( $winner->courier ) . '</p>';
-		echo '<p><strong>Cost:</strong> ' . esc_html( $winner->base ) . '</p>';
-		echo '<hr>';
-		echo '<h3>Order Response:</h3>';
-		echo '<pre style="background: #222; color: #0f0; padding: 15px; border-radius: 4px; overflow-x: auto;">';
-		print_r( $response );
-		echo '</pre>';
-
-		if ( ! empty( $awb_response ) ) {
-			echo '<hr>';
-			echo '<h3>AWB Response:</h3>';
-			echo '<pre style="background: #000; color: #ffeb3b; padding: 15px; border-radius: 4px; overflow-x: auto;">';
-			print_r( $awb_response );
-			echo '</pre>';
-		}
-
-		if ( ! empty( $label_response ) ) {
-			echo '<hr>';
-			echo '<h3>Label Response:</h3>';
-			echo '<pre style="background: #fff; color: #000; border: 2px solid #2271b1; padding: 15px; border-radius: 4px; overflow-x: auto;">';
-			print_r( $label_response );
-			echo '</pre>';
-
-			if ( isset( $label_response['label_url'] ) ) {
-				echo '<p style="margin-top:10px;"><a href="' . esc_url( $label_response['label_url'] ) . '" target="_blank" style="display:inline-block; padding:10px 20px; background:#2271b1; color:#fff; text-decoration:none; border-radius:4px; font-weight:bold;">DOWNLOAD LABEL</a></p>';
-			}
-		}
-		
-		echo '<hr>';
-		echo '<h3>Mapped Shipment Data:</h3>';
-		echo '<pre style="background: #eee; color: #333; padding: 15px; border-radius: 4px; overflow-x: auto;">';
-		print_r( $shipment );
-		echo '</pre>';
-		echo '</div>';
-		exit;
 	}
 
 	/**
@@ -178,10 +137,8 @@ class VendorActions {
 		}
 
 		// Run Pipeline
-		error_log( 'ZSS AJAX: Starting pipeline for order ' . $order_id );
 		$mapper   = new OrderMapper();
 		$shipment = $mapper->map( $order );
-		error_log( 'ZSS AJAX: Shipment mapped' );
 
 		// Step 2.6.6: Auto-Refresh Warehouse if needed
 		\Zerohold\Shipping\Core\WarehouseManager::checkAndRefresh( $shipment );
@@ -192,7 +149,6 @@ class VendorActions {
 
 		// 2. Gather Quotes
 		foreach ( $platforms as $key => $platform_adapter ) {
-			error_log( "ZSS: Fetching rates for $key" );
 			$quotes[ $key ] = $platform_adapter->getRates( $shipment );
 		}
 
@@ -219,7 +175,6 @@ class VendorActions {
 		
 		$adapter = $platforms[ $winner_platform ] ?? reset( $platforms ); // fallback
 		
-		error_log( "ZSS: Winner is {$winner_platform} with courier {$winner->courier} at {$winner->base}" );
 
 		// 4. Create Order (Book)
 		// We might need to pass selected courier info to the adapter?
@@ -233,31 +188,23 @@ class VendorActions {
 			$shipment->courier_id = $winner->courier_id;
 		}
 		
-		error_log( 'ZSS AJAX: Calling createOrder on ' . get_class( $adapter ) );
 		$response = $adapter->createOrder( $shipment );
-		error_log( 'ZSS AJAX: createOrder response: ' . print_r( $response, true ) );
 		
 		// Check for WP_Error
 		if ( is_wp_error( $response ) ) {
-			error_log( 'ZSS AJAX ERROR: createOrder returned WP_Error: ' . $response->get_error_message() );
 			wp_send_json_error( 'Order creation failed: ' . $response->get_error_message() );
 			return;
 		}
 
 		if ( isset( $response['shipment_id'] ) ) {
-			error_log( 'ZSS AJAX: shipment_id received: ' . $response['shipment_id'] );
 			
 			// Platform-specific follow-up (AWB gen)
 			// Shiprocket needs generateAWB. Nimbus might not.
 			// BigShip needs manifestOrder BEFORE generateAWB.
 			
 			if ( $adapter instanceof \Zerohold\Shipping\Platforms\BigShipAdapter && ! empty( $shipment->courier_id ) ) {
-				error_log( 'ZSS AJAX: BigShip detected, calling manifestOrder first' );
-				$manifest_result = $adapter->manifestOrder( $response['shipment_id'], $shipment->courier_id );
-				error_log( 'ZSS AJAX: manifestOrder response: ' . print_r( $manifest_result, true ) );
 				
 				if ( isset( $manifest_result['error'] ) ) {
-					error_log( 'ZSS AJAX ERROR: BigShip manifestOrder failed: ' . $manifest_result['error'] );
 					wp_send_json_error( 'Manifesting failed: ' . $manifest_result['error'] );
 					return;
 				}
@@ -267,13 +214,9 @@ class VendorActions {
 				if ( isset( $manifest_result['status'] ) && $manifest_result['status'] === 'success' ) {
 					update_post_meta( $order_id, '_zh_bigship_pickup_status', 1 );
 					update_post_meta( $order_id, '_zh_bigship_manifest_response', wp_json_encode( $manifest_result ) );
-					error_log( 'ZSS AJAX: BigShip manifest successful - pickup scheduled' );
 				}
 			}
 			
-			error_log( 'ZSS AJAX: Calling generateAWB' );
-			$awb_response = $adapter->generateAWB( $response['shipment_id'] );
-			error_log( 'ZSS AJAX: generateAWB response: ' . print_r( $awb_response, true ) );
 
 			// Check status - standardized or platform specific?
 			// Shiprocket uses 'awb_assign_status' == 1.
@@ -299,9 +242,6 @@ class VendorActions {
 			}
 
 			if ( $success ) {
-				error_log( 'ZSS AJAX: AWB assigned/confirmed, calling getLabel' );
-				$label_response = $adapter->getLabel( $response['shipment_id'] );
-				error_log( 'ZSS AJAX: getLabel response: ' . print_r( $label_response, true ) );
 
 				if ( isset( $label_response['label_url'] ) ) {
 					// Extract AWB Code (Platform specific or normalized?)
@@ -334,29 +274,22 @@ class VendorActions {
                          }
                     }
 					
-					error_log( 'ZSS AJAX: Meta updated, success' );
 
 					// Phase-1 Pickup: Schedule pickup for Shiprocket orders
 					if ( $winner_platform === 'shiprocket' && method_exists( $adapter, 'generatePickup' ) ) {
-						error_log( 'ZSS AJAX: Shiprocket detected, calling generatePickup' );
-						$pickup_response = $adapter->generatePickup( $response['shipment_id'] );
-						error_log( 'ZSS AJAX: generatePickup response: ' . print_r( $pickup_response, true ) );
 						
 						if ( ! is_wp_error( $pickup_response ) && isset( $pickup_response['pickup_status'] ) && $pickup_response['pickup_status'] == 1 ) {
 							// Pickup scheduled successfully
 							update_post_meta( $order_id, '_zh_shiprocket_pickup_status', 1 );
 							update_post_meta( $order_id, '_zh_shiprocket_pickup_response', wp_json_encode( $pickup_response ) );
-							error_log( 'ZSS AJAX: Pickup scheduled successfully' );
 						} elseif ( ! is_wp_error( $pickup_response ) && isset( $pickup_response['message'] ) && stripos( $pickup_response['message'], 'Already in Pickup Queue' ) !== false ) {
 							// Pickup was already scheduled (Shiprocket returns 400 for this)
 							// We treat this as success for UI purposes
 							update_post_meta( $order_id, '_zh_shiprocket_pickup_status', 1 );
 							update_post_meta( $order_id, '_zh_shiprocket_pickup_response', wp_json_encode( $pickup_response ) );
-							error_log( 'ZSS AJAX: Pickup already in queue - marking as scheduled' );
 						} else {
 							// Pickup failed - log but don't block the label generation success
 							$error_msg = is_wp_error( $pickup_response ) ? $pickup_response->get_error_message() : ( $pickup_response['message'] ?? 'Unknown error' );
-							error_log( 'ZSS AJAX WARNING: Pickup scheduling failed: ' . $error_msg );
 							update_post_meta( $order_id, '_zh_shiprocket_pickup_status', 0 );
 							update_post_meta( $order_id, '_zh_shiprocket_pickup_error', $error_msg );
 						}
@@ -383,21 +316,16 @@ class VendorActions {
 							$sync_url = 'https://bigship.in/tracking?tracking_number=' . $sync_awb;
 						}
 
-						error_log( "ZSS AJAX: Triggering DokanShipmentSync for $winner_platform" );
 						\Zerohold\Shipping\Core\DokanShipmentSync::sync_shipment( $order_id, $sync_awb, $sync_courier, $sync_url );
 					} catch ( \Exception $e ) {
-						error_log( "ZSS ERROR: DokanShipmentSync failed: " . $e->getMessage() );
 					}
 
 					wp_send_json_success( 'Label generated successfully' );
 				} else {
-					error_log( 'ZSS AJAX ERROR: label_url not in response' );
 				}
 			} else {
-				error_log( 'ZSS AJAX ERROR: AWB assignment failed' );
 			}
 		} else {
-			error_log( 'ZSS AJAX ERROR: No shipment_id in response' );
 		}
 
 		wp_send_json_error( 'Failed to generate label. Please try again.' );

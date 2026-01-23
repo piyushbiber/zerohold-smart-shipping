@@ -26,7 +26,6 @@ class DokanShipmentSync {
 
 		$order = wc_get_order( $order_id );
 		if ( ! $order ) {
-			error_log( "ZSS ERROR: Order not found for sync ($order_id)" );
 			return false;
 		}
 
@@ -38,7 +37,6 @@ class DokanShipmentSync {
 		}
 
 		if ( ! $vendor_id ) {
-			error_log( "ZSS ERROR: Vendor ID not found for order $order_id" );
 			return false;
 		}
 
@@ -54,7 +52,6 @@ class DokanShipmentSync {
 		
 		// Defensive: Check if table exists before inserting
 		if ( $wpdb->get_var( "SHOW TABLES LIKE '$table_name'" ) != $table_name ) {
-			error_log( "ZSS WARNING: Dokan Shipping Tracking table ($table_name) does not exist. Sync skipped." );
 			return false;
 		}
 
@@ -88,21 +85,15 @@ class DokanShipmentSync {
 			'%d', // status
 		];
 
-		error_log( "ZSS DEBUG: Syncing shipment to Dokan ($table_name) for order $order_id" );
 		
 		$result = $wpdb->insert( $table_name, $data, $format );
 
-		error_log( "ZSS DEBUG: wpdb->insert result: " . var_export( $result, true ) );
 
 		if ( $result === false ) {
-			error_log( "ZSS ERROR: Failed to insert shipment into $table_name." );
-			error_log( "ZSS ERROR: Last Error: " . $wpdb->last_error );
-			error_log( "ZSS ERROR: Table attempted: $table_name" );
 			return false;
 		}
 
 		$shipment_id = $wpdb->insert_id;
-		error_log( "ZSS SUCCESS: Dokan shipment created (ID: $shipment_id) for order $order_id" );
 
 		return $shipment_id;
 	}

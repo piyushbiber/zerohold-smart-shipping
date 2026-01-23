@@ -68,7 +68,6 @@ class WarehouseManager {
 
 		// 3. Create Warehouse
 		if ( ! method_exists( $adapter, 'createWarehouse' ) ) {
-			error_log( "ZSS ERROR: Adapter for $platform does not have createWarehouse method." );
 			return false;
 		}
 
@@ -109,14 +108,12 @@ class WarehouseManager {
 		$status = get_user_meta( $shipment->vendor_id, '_zh_warehouse_status', true );
 
 		if ( $status === 'NEED_REFRESH' ) {
-			error_log( "ZSS: Refreshing Warehouses for Vendor " . $shipment->vendor_id );
 			
 			// 1. Refresh Shiprocket
 			$sr_adapter = new ShiprocketAdapter();
 			$sr_id      = $sr_adapter->createWarehouse( $shipment );
 			if ( $sr_id && ! is_wp_error( $sr_id ) ) {
 				update_user_meta( $shipment->vendor_id, '_sr_pickup_location', $sr_id );
-				error_log( "ZSS: Shiprocket Warehouse Refreshed: $sr_id" );
 			}
 
 			// 2. Refresh BigShip
@@ -124,7 +121,6 @@ class WarehouseManager {
 			$bs_id      = $bs_adapter->createWarehouse( $shipment );
 			if ( $bs_id && ! is_wp_error( $bs_id ) ) {
 				update_user_meta( $shipment->vendor_id, '_bs_warehouse_id', $bs_id );
-				error_log( "ZSS: BigShip Warehouse Refreshed: $bs_id" );
 			}
 
 			// 3. Freeze

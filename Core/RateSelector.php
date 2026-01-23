@@ -53,15 +53,7 @@ class RateSelector {
 			return ( $base_a < $base_b ) ? -1 : 1;
 		} );
 
-		// Debug Logging (Temporary)
-		foreach ( $all_rates as $rate ) {
-			error_log( sprintf( 'ZSS Rate - %s: %s Rs - %s', ucfirst( $rate->platform ), $rate->base, $rate->courier ) );
-		}
-
 		$winner = $all_rates[0];
-		error_log( sprintf( 'ZSS Winner: %s (%s) at %s Rs', ucfirst( $winner->platform ), $winner->courier, $winner->base ) );
-
-		// Return the winner
 		return $winner;
 	}
 }

@@ -96,7 +96,6 @@ class ReturnManager {
 		$mapper   = new OrderMapper();
 		$shipment = $mapper->map( $order, 'return' );
 		
-		error_log( 'ZSS RETURN: Processing return for order ' . $order_id );
 
 		// 2. Fetch Original Shipment Data for Priority
 		$orig_platform = get_post_meta( $order_id, 'zh_shipping_platform', true );
@@ -107,7 +106,6 @@ class ReturnManager {
 
 		// 3. PRIORITY LOGIC: Same Platform + Same Courier
 		if ( $orig_platform && $orig_courier && isset( $platforms[ $orig_platform ] ) ) {
-			error_log( "ZSS RETURN: Attempting Priority (Same Platform: $orig_platform, Courier: $orig_courier)" );
 			
 			$adapter = $platforms[ $orig_platform ];
 			$rates   = $adapter->getRates( $shipment ); 
@@ -117,7 +115,6 @@ class ReturnManager {
 				if ( ! is_object( $rate ) ) continue;
 				
 				if ( strtolower( trim( $rate->courier ) ) === strtolower( trim( $orig_courier ) ) ) {
-					error_log( "ZSS RETURN: Priority Match Found" );
 					$winner = $rate;
 					break;
 				}
@@ -126,7 +123,6 @@ class ReturnManager {
 
 		// 4. FALLBACK LOGIC: Standard ZSS Rate Logic
 		if ( ! $winner ) {
-			error_log( "ZSS RETURN: Priority failed. Using fallback ZSS logic." );
 			$quotes = [];
 			foreach ( $platforms as $key => $adapter ) {
 				$quotes[ $key ] = $adapter->getRates( $shipment );
