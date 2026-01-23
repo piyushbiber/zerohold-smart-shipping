@@ -82,6 +82,7 @@ class ZeroHoldSmartShipping {
 		new Admin\ReturnAdminUI();
 		new Core\ReturnManager();
 		new Frontend\RetailerReturnUI();
+		new Core\DokanStatusSync();
 
 		// Initialize Platforms (for testing auth)
 		new Platforms\ShiprocketAdapter();
