@@ -123,6 +123,13 @@ class DokanShipmentSync {
 			return false;
 		}
 
+		// 1. ERASURE LOGIC: If this is the first return sync, erase old forward tracking data
+		$is_return_active = get_post_meta( $order_id, '_zh_return_tracking_active', true );
+		if ( ! $is_return_active ) {
+			$wpdb->delete( $table_name, [ 'order_id' => $order_id ], [ '%d' ] );
+			update_post_meta( $order_id, '_zh_return_tracking_active', 1 );
+		}
+
 		// Get return-specific details
 		$awb      = get_post_meta( $order_id, '_zh_return_awb', true ) ?: '-';
 		$courier  = get_post_meta( $order_id, '_zh_return_courier', true ) ?: 'Other';
@@ -159,6 +166,13 @@ class DokanShipmentSync {
 			'status'          => 1,
 		];
 
-		return $wpdb->insert( $table_name, $data );
+		// 2. REFILL LOGIC: Update existing row if it exists, otherwise insert
+		$existing_id = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM $table_name WHERE order_id = %d LIMIT 1", $order_id ) );
+
+		if ( $existing_id ) {
+			return $wpdb->update( $table_name, $data, [ 'id' => $existing_id ] );
+		} else {
+			return $wpdb->insert( $table_name, $data );
+		}
 	}
 }
