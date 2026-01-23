@@ -124,9 +124,19 @@ class DokanShipmentSync {
 		}
 
 		// Get return-specific details
-		$awb     = get_post_meta( $order_id, '_zh_return_awb', true ) ?: '-';
-		$courier = get_post_meta( $order_id, '_zh_return_courier', true ) ?: 'Other';
-		$url     = get_post_meta( $order_id, '_zh_return_label_url', true ) ?: '#';
+		$awb      = get_post_meta( $order_id, '_zh_return_awb', true ) ?: '-';
+		$courier  = get_post_meta( $order_id, '_zh_return_courier', true ) ?: 'Other';
+		$platform = get_post_meta( $order_id, '_zh_return_platform', true );
+
+		// Construct tracking URL (instead of label URL)
+		$url = '#';
+		if ( ! empty( $awb ) && $awb !== '-' ) {
+			if ( $platform === 'shiprocket' ) {
+				$url = 'https://shiprocket.co/tracking/' . $awb;
+			} elseif ( $platform === 'bigship' ) {
+				$url = 'https://bigship.in/tracking?tracking_number=' . $awb;
+			}
+		}
 
 		// Reuse forward items for return (or keep empty if partial returns aren't tracked yet)
 		$item_qty_map = [];
