@@ -96,6 +96,7 @@ class DokanShipmentSync {
 		$shipment_id = $wpdb->insert_id;
 
 		return $shipment_id;
+	}
 
 	/**
 	 * Record a return-specific update in the Dokan Shipment Tracking table.

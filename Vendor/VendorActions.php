@@ -368,6 +368,7 @@ class VendorActions {
 
 		echo wp_remote_retrieve_body( $pdf_content );
 		exit;
+	}
 
 	/**
 	 * Proxy handler for return label downloads.
@@ -395,6 +396,7 @@ class VendorActions {
 		// Redirect to actual label
 		wp_redirect( $label_url );
 		exit;
+	}
 
 	/**
 	 * AJAX Handler for manual Return Handover confirmation by Vendor.
