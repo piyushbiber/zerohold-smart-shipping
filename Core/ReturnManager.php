@@ -15,6 +15,7 @@ class ReturnManager {
 	public function __construct() {
 		// AJAX handler for manual admin button
 		add_action( 'wp_ajax_zh_initiate_return_shipping', [ $this, 'handle_initiate_return_ajax' ] );
+		add_action( 'wp_ajax_zh_refetch_return_label', [ $this, 'handle_refetch_label_ajax' ] );
 
 		// Automated trigger on WP Swings Refund Approval
 		// Based on user feedback: "Refund approved -> initiate return shipping"
