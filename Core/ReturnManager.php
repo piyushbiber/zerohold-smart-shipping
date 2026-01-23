@@ -167,6 +167,13 @@ class ReturnManager {
 				update_post_meta( $order_id, '_zh_return_label_url', $label_res['label_url'] );
 			}
 
+			// Track Event: In Transit
+			\Zerohold\Shipping\Core\DokanShipmentSync::add_return_update( 
+				$order_id, 
+				'ss_in_transit', 
+				'In transit' 
+			);
+
 			return 'Return Shipment Created via ' . ucfirst($winner->platform) . ' (' . $winner->courier . ')';
 		}
 

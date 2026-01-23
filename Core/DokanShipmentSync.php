@@ -96,5 +96,58 @@ class DokanShipmentSync {
 		$shipment_id = $wpdb->insert_id;
 
 		return $shipment_id;
+
+	/**
+	 * Record a return-specific update in the Dokan Shipment Tracking table.
+	 */
+	public static function add_return_update( $order_id, $status_slug, $status_label ) {
+		global $wpdb;
+
+		$order = wc_get_order( $order_id );
+		if ( ! $order ) {
+			return false;
+		}
+
+		$vendor_id = dokan_get_seller_id_by_order( $order_id );
+		if ( ! $vendor_id ) {
+			$vendor_id = $order->get_meta( '_dokan_vendor_id', true );
+		}
+
+		if ( ! $vendor_id ) {
+			return false;
+		}
+
+		$table_name = $wpdb->prefix . 'dokan_shipping_tracking';
+		if ( $wpdb->get_var( "SHOW TABLES LIKE '$table_name'" ) != $table_name ) {
+			return false;
+		}
+
+		// Get return-specific details
+		$awb     = get_post_meta( $order_id, '_zh_return_awb', true ) ?: '-';
+		$courier = get_post_meta( $order_id, '_zh_return_courier', true ) ?: 'Other';
+		$url     = get_post_meta( $order_id, '_zh_return_label_url', true ) ?: '#';
+
+		// Reuse forward items for return (or keep empty if partial returns aren't tracked yet)
+		$item_qty_map = [];
+		foreach ( $order->get_items() as $item_id => $item ) {
+			$item_qty_map[ $item_id ] = $item->get_quantity();
+		}
+
+		$data = [
+			'order_id'        => (int) $order_id,
+			'seller_id'       => (int) $vendor_id,
+			'provider'        => 'sp-other',
+			'provider_label'  => $courier,
+			'provider_url'    => $url,
+			'number'          => $awb,
+			'date'            => current_time( 'M j, Y' ),
+			'shipping_status' => $status_slug,
+			'status_label'    => $status_label,
+			'is_notify'       => 'no',
+			'item_qty'        => wp_json_encode( $item_qty_map ),
+			'status'          => 1,
+		];
+
+		return $wpdb->insert( $table_name, $data );
 	}
 }

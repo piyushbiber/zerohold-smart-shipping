@@ -63,6 +63,27 @@ class VendorUI {
 					'icon'   => '<span class="zss-pickup-scheduled zss-status-badge">✓ PICKUP SCHEDULED</span>',
 				];
 			}
+
+			// Add "CONFIRM HANDOVER" for return shipments in transit
+			$return_ship_id = get_post_meta( $order_id, '_zh_return_shipment_id', true );
+			if ( $return_ship_id ) {
+				$handover_done = (int) get_post_meta( $order_id, '_zh_return_handover_confirmed', true );
+				if ( ! $handover_done ) {
+					$actions['confirm_handover'] = [
+						'url'    => '#',
+						'name'   => __( 'Confirm Handover', 'zerohold-shipping' ),
+						'action' => 'confirm-handover',
+						'icon'   => '<span class="zss-confirm-handover zss-action-btn" style="background:#e67e22!important; color:white!important; border:0!important;">CONFIRM HANDOVER</span>',
+					];
+				} else {
+					$actions['handover_done'] = [
+						'url'    => '#',
+						'name'   => __( 'Received', 'zerohold-shipping' ),
+						'action' => 'handover-done',
+						'icon'   => '<span class="zss-handover-done zss-status-badge">✓ RECEIVED AT WH</span>',
+					];
+				}
+			}
 		}
 
 		return $actions;
@@ -234,6 +255,43 @@ class VendorUI {
 					}
 				}).fail(function(xhr) {
 					console.error('ZSS AJAX FAIL:', xhr.responseText);
+					alert('Connection error');
+					$spinner.remove();
+					$container.children().show();
+				});
+			});
+
+			// CONFIRM HANDOVER
+			$(document).on('click', '.zss-confirm-handover, .dokan-order-action [action="confirm-handover"], .confirm-handover', function(e){
+				e.preventDefault();
+				
+				let btn = $(this);
+				let id = getOrderId(btn);
+				let nonce = $('#zh_order_nonce').val();
+				let $container = btn.closest('.dokan-order-action');
+				
+				if (!id || !confirm('Are you sure you have received this return at your warehouse?')) {
+					return;
+				}
+				
+				// Show spinner
+				$container.children().hide();
+				let $spinner = $('<span class="zss-spinner">⏳ Updating...</span>');
+				$container.append($spinner);
+				
+				$.post('/wp-admin/admin-ajax.php', {
+					action: 'zh_confirm_return_handover',
+					order_id: id,
+					security: nonce
+				}, function(res) {
+					if (res.success) {
+						location.reload();
+					} else {
+						alert(res.data || 'Error updating status');
+						$spinner.remove();
+						$container.children().show();
+					}
+				}).fail(function() {
 					alert('Connection error');
 					$spinner.remove();
 					$container.children().show();

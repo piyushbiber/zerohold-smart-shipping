@@ -66,7 +66,7 @@ class RetailerReturnUI {
 				</div>
 				<div style="display: flex; align-items: center; gap: 10px;">
 					<?php if ( $label_url ) : ?>
-						<a href="<?php echo esc_url( $label_url ); ?>" 
+						<a href="<?php echo admin_url( 'admin-post.php?action=zh_download_return_label&order_id=' . $order_id ); ?>" 
 						   target="_blank" 
 						   class="button" 
 						   style="background: #166534 !important; color: #fff !important; border: none; padding: 12px 24px; border-radius: 6px; font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 8px; font-size: 14px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">

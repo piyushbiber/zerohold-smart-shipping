@@ -16,9 +16,12 @@ class VendorActions {
 		
 		// Step 2.6.4: Register AJAX handler
 		add_action( 'wp_ajax_zh_generate_label', [ $this, 'zh_handle_generate_label_ajax' ] );
+		add_action( 'wp_ajax_zh_confirm_return_handover', [ $this, 'zh_confirm_return_handover' ] );
 		
 		// Step 2.6.5: Register download handler
 		add_action( 'admin_post_zh_download_label', [ $this, 'zh_download_label' ] );
+		add_action( 'admin_post_zh_download_return_label', [ $this, 'zh_download_return_label' ] );
+		add_action( 'admin_post_nopriv_zh_download_return_label', [ $this, 'zh_download_return_label' ] );
 
 		// Hook: Flag vendor for warehouse refresh on profile update
 		add_action( 'dokan_store_profile_saved', [ '\Zerohold\Shipping\Core\WarehouseManager', 'flagVendorForRefresh' ] );
@@ -365,5 +368,56 @@ class VendorActions {
 
 		echo wp_remote_retrieve_body( $pdf_content );
 		exit;
+
+	/**
+	 * Proxy handler for return label downloads.
+	 * Tracks "Return Initiated" and redirects to actual PDF.
+	 */
+	public function zh_download_return_label() {
+		if ( empty( $_GET['order_id'] ) ) {
+			wp_die( 'Missing Order ID' );
+		}
+
+		$order_id  = intval( $_GET['order_id'] );
+		$label_url = get_post_meta( $order_id, '_zh_return_label_url', true );
+
+		if ( ! $label_url ) {
+			wp_die( 'Return label not found.' );
+		}
+
+		// Track Event
+		\Zerohold\Shipping\Core\DokanShipmentSync::add_return_update( 
+			$order_id, 
+			'ss_return_initiated', 
+			'Return Initiated' 
+		);
+
+		// Redirect to actual label
+		wp_redirect( $label_url );
+		exit;
+
+	/**
+	 * AJAX Handler for manual Return Handover confirmation by Vendor.
+	 */
+	public function zh_confirm_return_handover() {
+		check_ajax_referer( 'zh_order_action_nonce', 'security' );
+
+		if ( empty( $_POST['order_id'] ) ) {
+			wp_send_json_error( 'Missing Order ID' );
+		}
+
+		$order_id = intval( $_POST['order_id'] );
+		
+		// Update meta
+		update_post_meta( $order_id, '_zh_return_handover_confirmed', 1 );
+
+		// Track Event
+		\Zerohold\Shipping\Core\DokanShipmentSync::add_return_update( 
+			$order_id, 
+			'ss_return_handover', 
+			'Return Handover To Warehouse' 
+		);
+
+		wp_send_json_success( 'Handover confirmed successfully' );
 	}
 }
