@@ -44,6 +44,36 @@ class ReturnManager {
 	}
 
 	/**
+	 * AJAX handler to refetch a missing label URL.
+	 */
+	public function handle_refetch_label_ajax() {
+		check_ajax_referer( 'zh_return_nonce', 'security' );
+
+		$order_id = intval( $_POST['order_id'] );
+		$ship_id  = get_post_meta( $order_id, '_zh_return_shipment_id', true );
+		$platform = get_post_meta( $order_id, '_zh_return_platform', true );
+
+		if ( ! $ship_id || ! $platform ) {
+			wp_send_json_error( 'Shipment not found' );
+		}
+
+		$platforms = PlatformManager::getEnabledPlatforms();
+		if ( ! isset( $platforms[ $platform ] ) ) {
+			wp_send_json_error( 'Platform adapter not found' );
+		}
+
+		$adapter   = $platforms[ $platform ];
+		$label_res = $adapter->getLabel( $ship_id );
+
+		if ( isset( $label_res['label_url'] ) ) {
+			update_post_meta( $order_id, '_zh_return_label_url', $label_res['label_url'] );
+			wp_send_json_success( 'Label URL updated' );
+		}
+
+		wp_send_json_error( 'Label URL still not available from carrier' );
+	}
+
+	/**
 	 * Core Logic: Creates a return shipment (Manual or Automated).
 	 * 
 	 * @param int $order_id
