@@ -138,7 +138,7 @@ class BigShipAdapter implements PlatformInterface {
             'consignee_detail' => [
                 'first_name' => $fname,
                 'last_name'  => $lname,
-                'company_name' => '',
+                'company_name' => $this->sanitizeBigShipString( $shipment->to_store, 40 ),
                 'contact_number_primary' => $shipment->to_phone,
                 'email_id'   => 'customer@example.com', // Optional per docs?
                 'consignee_address' => [
@@ -429,8 +429,13 @@ class BigShipAdapter implements PlatformInterface {
 
 		$landmark = substr( preg_replace( '/[^A-Za-z0-9 .,-\/]/', '', $shipment->from_city ), 0, 50 );
 
-		// Naming: Unique per vendor
-		$safe_wh_name = 'ZH-WH-' . $shipment->vendor_id;
+		// Naming: Unique per vendor/retailer
+		// We use the friendly from_store name for label presentation.
+		$safe_wh_name = $this->sanitizeBigShipString( $shipment->from_store, 40 );
+		
+		if ( empty( $safe_wh_name ) ) {
+			$safe_wh_name = 'ZH-WH-' . ( $shipment->vendor_id ?? $shipment->retailer_id );
+		}
 
 		// Payload (Cleaned)
 		$payload = [

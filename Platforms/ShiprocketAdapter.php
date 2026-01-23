@@ -179,21 +179,15 @@ class ShiprocketAdapter implements PlatformInterface {
 		// Phase-1: Use correct endpoint
 		
 		// Phase-2: Payload Mapping
-		// User Req: pickup_location = <store_name>_WH
-		// Sanitize store name to be safe? "Adam Store" -> "Adam_Store_WH" or just "AdamStore_WH"
-		// Better to be safe and remove special chars.
-		$store_name_sanitized = preg_replace( '/[^a-zA-Z0-9]/', '', $shipment->from_store );
-		if ( empty( $store_name_sanitized ) ) {
-			$store_name_sanitized = 'Vendor' . $shipment->vendor_id;
+		if ( ! empty( $shipment->warehouse_internal_id ) ) {
+			$pickup_code = $shipment->warehouse_internal_id;
+		} else {
+			$store_name_sanitized = preg_replace( '/[^a-zA-Z0-9]/', '', $shipment->from_store );
+			if ( empty( $store_name_sanitized ) ) {
+				$store_name_sanitized = 'Vendor' . $shipment->vendor_id;
+			}
+			$pickup_code = $store_name_sanitized . '_WH_' . $shipment->vendor_id; 
 		}
-		
-		// Use "Vendor_ID" prefix ensuring uniqueness even if store names duplicate?
-		// User: "pickup_location": "ADAMSTORE_WH". 
-		// I will combine to ensure uniqueness + readability: e.g. "Vendor123_AdamStore_WH"
-		// Or stick strictly to user example? "Adam Store WH" -> "Adam Store WH" (SR might allow spaces).
-		// User Note: "Shiprocket treats pickup_location as ID string. ... Do NOT uppercase yourself".
-		// I'll use a safe readable string.
-		$pickup_code = $store_name_sanitized . '_WH_' . $shipment->vendor_id; 
 
 		// Email from WP User
 		$vendor_user = get_userdata( $shipment->vendor_id );

@@ -58,7 +58,7 @@ class WarehouseManager {
 		// 2. Prepare Retailer Naming for Adapter
 		if ( $is_retailer ) {
 			$phone = preg_replace( '/[^0-9]/', '', $shipment->retailer_phone );
-			$shipment->from_store = 'RT_CUST_' . $phone . '_WH';
+			$shipment->warehouse_internal_id = 'RT_CUST_' . $phone . '_WH';
 		}
 
 		// 3. Create Warehouse

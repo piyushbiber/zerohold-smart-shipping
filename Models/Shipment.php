@@ -59,6 +59,7 @@ class Shipment {
 	// ============= Return / Reverse Info =============
 	public $direction = 'forward'; // 'forward' or 'return'
 	public $is_retailer_pickup = false;
+	public $warehouse_internal_id; // Technical ID (e.g., RT_CUST_..._WH)
 	public $retailer_phone;
 	public $retailer_id;
 

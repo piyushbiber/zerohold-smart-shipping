@@ -27,8 +27,10 @@ class OrderMapper {
 			$vendor = function_exists( 'dokan' ) ? \dokan()->vendor->get( $vendor_id ) : null;
 			$store  = $vendor ? $vendor->get_shop_info() : [];
 
-			$shipment->to_store    = $store['store_name'] ?? '';
-			$shipment->to_contact  = $store['store_name'] ?? '';
+			$shipment->to_store      = ! empty( $store['store_name'] ) ? $store['store_name'] : 'Vendor_' . $vendor_id;
+			$shipment->to_contact    = $shipment->to_store;
+			$shipment->to_first_name = $shipment->to_store;
+			$shipment->to_last_name  = '';
 			$shipment->to_phone    = $store['phone'] ?? '';
 			$shipment->to_address1 = $store['address']['street_1'] ?? '';
 			$shipment->to_address2 = $store['address']['street_2'] ?? '';
@@ -56,7 +58,12 @@ class OrderMapper {
 		// ============= Pickup (Origin) =============
 		if ( $direction === 'return' ) {
 			// Origin is the RETAILER
-			$shipment->from_store    = 'Customer_' . $order->get_id();
+			$retailer_store = $order->get_shipping_company();
+			if ( empty( $retailer_store ) ) {
+				$retailer_store = 'Customer_' . $order->get_id();
+			}
+
+			$shipment->from_store    = $retailer_store;
 			$shipment->from_contact  = trim( $order->get_shipping_first_name() . ' ' . $order->get_shipping_last_name() );
 			$shipment->from_phone    = $order->get_billing_phone() ?: $order->get_shipping_phone();
 			$shipment->from_address1 = $order->get_shipping_address_1();
