@@ -6,6 +6,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+class RetailerReturnUI {
+
 	private static $has_rendered = false;
 
 	public function __construct() {
