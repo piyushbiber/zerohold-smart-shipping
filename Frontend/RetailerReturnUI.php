@@ -9,33 +9,48 @@ if ( ! defined( 'ABSPATH' ) ) {
 class RetailerReturnUI {
 
 	public function __construct() {
-		// Hook for WP Swings Refund Form Footer
-		// Shows button to the customer on the refund request view
+		// Primary: Hook for WP Swings Refund Form Footer
 		add_action( 'wps_rma_refund_form_footer', [ $this, 'add_generate_label_button' ] );
+
+		// Secondary: WooCommerce Order Details (for view-order page)
+		add_action( 'woocommerce_order_details_after_order_table', [ $this, 'add_generate_label_button' ] );
 	}
 
 	/**
 	 * Injects the "Generate Return Label" button into the WP Swings form.
 	 */
 	public function add_generate_label_button() {
-		// 1. Get Order ID from context (URL params as fallback)
+		error_log( "ZSS DEBUG: RetailerReturnUI::add_generate_label_button hook fired." );
+
+		// 1. Get Order ID from context
 		$order_id = $this->get_current_order_id();
+		error_log( "ZSS DEBUG: Detected Order ID: " . ($order_id ?: 'NONE') );
+
 		if ( ! $order_id ) {
 			return;
 		}
 
 		$order = wc_get_order( $order_id );
 		if ( ! $order ) {
+			error_log( "ZSS DEBUG: Order #$order_id not found via wc_get_order." );
 			return;
 		}
 
 		// 2. Security: Verify current user is the buyer
-		if ( get_current_user_id() !== (int) $order->get_customer_id() ) {
+		$current_user_id = get_current_user_id();
+		$customer_id     = (int) $order->get_customer_id();
+		error_log( "ZSS DEBUG: Current User ID: $current_user_id, Order Customer ID: $customer_id" );
+
+		if ( $current_user_id !== $customer_id && ! current_user_can( 'manage_options' ) ) {
+			error_log( "ZSS DEBUG: User ID mismatch and not admin." );
 			return;
 		}
 
 		// 3. Logic Guard: Refund Status must be "Approved"
-		if ( ! $this->is_refund_approved( $order_id ) ) {
+		$is_approved = $this->is_refund_approved( $order_id );
+		error_log( "ZSS DEBUG: Is Refund Approved: " . ($is_approved ? 'YES' : 'NO') );
+
+		if ( ! $is_approved ) {
 			return;
 		}
 
@@ -117,6 +132,21 @@ class RetailerReturnUI {
 			return intval( $_GET['order'] );
 		}
 
+		// Method C: WooCommerce My Account View Order endpoint
+		global $wp;
+		if ( isset( $wp->query_vars['view-order'] ) ) {
+			return intval( $wp->query_vars['view-order'] );
+		}
+
+		// Method D: Parse from URL if path is /view-order/123/
+		$path = trim( $_SERVER['REQUEST_URI'], '/' );
+		$parts = explode( '/', $path );
+		foreach ( $parts as $part ) {
+			if ( is_numeric( $part ) && intval( $part ) > 1000 ) { // Basic sanity check
+				return intval( $part );
+			}
+		}
+
 		return 0;
 	}
 
@@ -130,17 +160,20 @@ class RetailerReturnUI {
 		}
 
 		$status = $order->get_status();
+		error_log( "ZSS DEBUG: Checking Approval for Order #$order_id. WC Status: '$status'" );
 		
 		// Map of statuses that imply the return has been approved/validated
 		$approved_statuses = [ 
 			'return-approved', 
 			'wc-return-approved', 
 			'refund-requested', // Sometimes still in request but admin allows label
-			'wc-refund-requested' 
+			'wc-refund-requested',
+			'completed', // For testing - allow on completed orders temporarily
 		];
 
 		if ( in_array( $status, $approved_statuses ) ) {
-			return true;
+			error_log( "ZSS DEBUG: Status '$status' is in approved list." );
+			// return true; // Keep checking meta for deeper validation if needed
 		}
 
 		// Metadata check as second layer
@@ -149,10 +182,16 @@ class RetailerReturnUI {
 			// Search for any key related to WP Swings status or approval
 			if ( strpos( $key, 'wps_' ) !== false ) {
 				$val = is_array( $values ) ? reset( $values ) : $values;
-				if ( stripos( $val, 'approved' ) !== false ) {
+				error_log( "ZSS DEBUG: Found WP Swings Meta: $key = $val" );
+				if ( stripos( $val, 'approved' ) !== false || stripos( $val, 'requested' ) !== false ) {
 					return true;
 				}
 			}
+		}
+
+		// TEMPORARY: If we are on the view-order page and it's completed, let's just show it for now to verify placement
+		if ( $status === 'completed' ) {
+			return true;
 		}
 
 		return false;
