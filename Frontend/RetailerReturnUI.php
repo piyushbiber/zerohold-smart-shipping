@@ -9,17 +9,24 @@ if ( ! defined( 'ABSPATH' ) ) {
 class RetailerReturnUI {
 
 	public function __construct() {
+		error_log( "ZSS DEBUG: RetailerReturnUI initialized." );
 		// Hook for WP Swings Refund Form Footer
-		// Shows button to the customer on the refund request view
 		add_action( 'wps_rma_refund_form_footer', [ $this, 'add_generate_label_button' ] );
+
+		// Extra Fallback Hooks
+		add_action( 'woocommerce_order_details_after_order_table', [ $this, 'add_generate_label_button' ] );
+		add_action( 'woocommerce_after_order_details', [ $this, 'add_generate_label_button' ] );
 	}
 
 	/**
 	 * Injects the "Generate Return Label" button into the WP Swings form.
 	 */
 	public function add_generate_label_button() {
+		error_log( "ZSS DEBUG: RetailerReturnUI::add_generate_label_button hook fired!" );
+		
 		// 1. Get Order ID from context
 		$order_id = $this->get_current_order_id();
+		error_log( "ZSS DEBUG: Frontend Order ID detected: " . ($order_id ?: 'FAILED') );
 
 		if ( ! $order_id ) {
 			return;
@@ -27,19 +34,25 @@ class RetailerReturnUI {
 
 		$order = wc_get_order( $order_id );
 		if ( ! $order ) {
+			error_log( "ZSS DEBUG: Order FAILED for #$order_id" );
 			return;
 		}
 
 		// 2. Security: Verify current user is the buyer
 		$uid = get_current_user_id();
 		$cid = (int) $order->get_customer_id();
+		error_log( "ZSS DEBUG: Security - Current User: $uid, Order Customer: $cid" );
 
 		if ( $uid !== $cid && ! current_user_can( 'manage_options' ) ) {
 			return;
 		}
 
 		// 3. Logic Guard: Refund Status must be "Approved" (Trusting Order Status)
-		if ( ! $this->is_refund_approved( $order_id ) ) {
+		$status = $order->get_status();
+		$is_approved = $this->is_refund_approved( $order_id );
+		error_log( "ZSS DEBUG: Status Check - '$status', Approved: " . ($is_approved ? 'YES' : 'NO') );
+
+		if ( ! $is_approved ) {
 			return;
 		}
 
