@@ -41,10 +41,25 @@ class BigShipAdapter implements PlatformInterface {
 		if ( $is_return ) {
 			// AGGREGATION FOR RETURNS: BigShip requires exact sum match.
 			// Collapsing into 1 line avoids rounding/summation mismatches.
+			
+			// Build a descriptive name from original items
+			$item_names = [];
+			foreach ( $shipment->items as $item ) {
+				$item_names[] = $item['name'];
+			}
+			$combined_name = implode( ', ', $item_names );
+			$sanitized_name = $this->sanitizeBigShipString( $combined_name );
+			
+			// Truncate to safety limit (50 chars)
+			$final_name = substr( $sanitized_name, 0, 50 );
+			if ( empty( $final_name ) ) {
+				$final_name = 'Return Order ' . $shipment->order_id;
+			}
+
 			$product_details[] = [
 				'product_category'                => 'Others',
 				'product_sub_category'            => 'General',
-				'product_name'                    => 'Return Items (Order #' . $shipment->order_id . ')',
+				'product_name'                    => $final_name,
 				'product_quantity'                => 1,
 				'each_product_invoice_amount'     => (float) $shipment->declared_value,
 				'each_product_collectable_amount' => 0,
@@ -57,7 +72,7 @@ class BigShipAdapter implements PlatformInterface {
 				$product_details[] = [
 					'product_category'                => 'Others',
 					'product_sub_category'            => 'General',
-					'product_name'                    => substr( $item['name'], 0, 50 ),
+					'product_name'                    => $this->sanitizeBigShipString( $item['name'], 50 ),
 					'product_quantity'                => (int) $item['qty'],
 					'each_product_invoice_amount'     => (float) $shipment->declared_value / max( 1, $shipment->qty ),
 					'each_product_collectable_amount' => 0,
@@ -545,5 +560,28 @@ class BigShipAdapter implements PlatformInterface {
 
 		error_log( "ZSS DEBUG: Warehouse '$target_name' not found in BigShip list." );
 		return false;
+	}
+
+	/**
+	 * Sanitizes a string for BigShip API (Only Alpha, Num, Space, -, /)
+	 * 
+	 * @param string $string
+	 * @param int|null $limit Truncate limit
+	 * @return string
+	 */
+	private function sanitizeBigShipString( $string, $limit = null ) {
+		// Replace common problematic symbols with spaces/empty
+		$string = str_replace( [ '(', ')', '[', ']', '{', '}', '#', '*', '+', '=', '!', '?' ], ' ', $string );
+		
+		// Remove everything except A-Za-z0-9, space, hyphen, forward slash
+		$string = preg_replace( '/[^A-Za-z0-9 \-\/]/', '', $string );
+		
+		// Collapse multiple spaces
+		$string = preg_replace( '/\s+/', ' ', trim( $string ) );
+		
+		if ( $limit ) {
+			return substr( $string, 0, $limit );
+		}
+		return $string;
 	}
 }
