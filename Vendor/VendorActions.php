@@ -588,6 +588,8 @@ class VendorActions {
 		</html>
 		<?php
 		exit;
+	}
+
 	/**
 	 * AJAX Handler for On-Demand Shipping Estimates during Product Upload.
 	 */
