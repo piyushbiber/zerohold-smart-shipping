@@ -372,7 +372,8 @@ class VendorUI {
 			console.log("ZSS DEBUG: Shipping Estimate JS Loaded");
 			
 			// Support both standard Dokan (#_length) AND ZeroHold custom Pack Setup (#zh_field_box_length)
-			const $target = $('#_length, #zh_field_box_length').first().closest('.dokan-form-group');
+			// Also support different parent containers (.dokan-form-group vs .zh-dimension-row)
+			const $target = $('#_length, #zh_field_box_length').first().closest('.dokan-form-group, .zh-dimension-row');
 			console.log("ZSS DEBUG: Target dimension field found:", $target.length);
 			
 			if ($target.length) {
@@ -395,7 +396,7 @@ class VendorUI {
 				e.preventDefault();
 				const btn = $(this);
 				
-				// Dynamically find inputs based on current form type
+				// Dynamically find inputs based on current form type (Standard vs Pack Setup)
 				const isPack = $('#zh_field_box_weight').length > 0;
 				const weight = isPack ? $('#zh_field_box_weight').val() : $('#_weight').val();
 				const l = isPack ? $('#zh_field_box_length').val() : $('#_length').val();
