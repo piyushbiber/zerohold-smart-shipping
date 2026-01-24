@@ -73,7 +73,9 @@ class ShiprocketAdapter implements PlatformInterface {
 		];
 
 		// Post to Shiprocket
+		error_log( "ZSS DEBUG: Shiprocket Order Payload: " . print_r( $payload, true ) );
 		$response = $this->client->post( 'orders/create/adhoc', $payload );
+		error_log( "ZSS DEBUG: Shiprocket Order Response: " . print_r( $response, true ) );
 
 		return $response;
 	}
@@ -123,12 +125,12 @@ class ShiprocketAdapter implements PlatformInterface {
 		];
 
 		// Post to Shiprocket
+		error_log( "ZSS DEBUG: Shiprocket AWB Payload: " . print_r( $payload, true ) );
 		$response = $this->client->post( 'courier/assign/awb', $payload );
+		error_log( "ZSS DEBUG: Shiprocket AWB Response: " . print_r( $response, true ) );
 
-		return $response;
-	}
 	public function getLabel( $shipment_id ) {
-		// POST /courier/generate/label
+		error_log( "ZSS DEBUG: Shiprocket Label Request for ID: " . $shipment_id );
 		return $this->client->post(
 			'courier/generate/label',
 			[

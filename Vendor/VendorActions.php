@@ -143,6 +143,9 @@ class VendorActions {
 		$mapper   = new OrderMapper();
 		$shipment = $mapper->map( $order );
 
+		error_log( "ZSS DEBUG: Starting Label Generation for Order #{$order_id}" );
+		error_log( "ZSS DEBUG: Shipment Data: " . print_r( $shipment, true ) );
+
 		// Step 2.6.6: Auto-Refresh Warehouse if needed
 		\Zerohold\Shipping\Core\WarehouseManager::checkAndRefresh( $shipment );
 
@@ -160,9 +163,12 @@ class VendorActions {
 		$winner   = $selector->selectBestRate( $quotes );
 
 		if ( ! $winner ) {
+			error_log( "ZSS ERROR: No shipping rates found for Order #{$order_id}" );
 			wp_send_json_error( 'No shipping rates available from enabled platforms.' );
 			return;
 		}
+
+		error_log( "ZSS DEBUG: Winner Selected: " . print_r( $winner, true ) );
 
 		$winner_platform = $winner->platform; // 'shiprocket', 'nimbus', etc.
 		// Note from Phase-4 logic: we need to use the ADAPTER of the winner to book.
@@ -191,10 +197,13 @@ class VendorActions {
 			$shipment->courier_id = $winner->courier_id;
 		}
 		
+		error_log( "ZSS DEBUG: Calling createOrder via " . ucfirst($winner_platform) );
 		$response = $adapter->createOrder( $shipment );
+		error_log( "ZSS DEBUG: createOrder Response: " . print_r( $response, true ) );
 		
 		// Check for WP_Error
 		if ( is_wp_error( $response ) ) {
+			error_log( "ZSS ERROR: createOrder WP_Error: " . $response->get_error_message() );
 			wp_send_json_error( 'Order creation failed: ' . $response->get_error_message() );
 			return;
 		}
@@ -206,8 +215,12 @@ class VendorActions {
 			// BigShip needs manifestOrder BEFORE generateAWB.
 			
 			if ( $adapter instanceof \Zerohold\Shipping\Platforms\BigShipAdapter && ! empty( $shipment->courier_id ) ) {
-				
+				error_log( "ZSS DEBUG: BigShip - Manifesting Order..." );
+				$manifest_result = $adapter->manifestOrder( $response['shipment_id'], $shipment->courier_id );
+				error_log( "ZSS DEBUG: BigShip Manifest Response: " . print_r( $manifest_result, true ) );
+
 				if ( isset( $manifest_result['error'] ) ) {
+					error_log( "ZSS ERROR: BigShip Manifesting failed: " . $manifest_result['error'] );
 					wp_send_json_error( 'Manifesting failed: ' . $manifest_result['error'] );
 					return;
 				}
@@ -219,7 +232,10 @@ class VendorActions {
 					update_post_meta( $order_id, '_zh_bigship_manifest_response', wp_json_encode( $manifest_result ) );
 				}
 			}
-			
+
+			error_log( "ZSS DEBUG: Generating AWB..." );
+			$awb_response = $adapter->generateAWB( $response['shipment_id'] );
+			error_log( "ZSS DEBUG: AWB Response: " . print_r( $awb_response, true ) );
 
 			// Check status - standardized or platform specific?
 			// Shiprocket uses 'awb_assign_status' == 1.
@@ -245,6 +261,9 @@ class VendorActions {
 			}
 
 			if ( $success ) {
+				error_log( "ZSS DEBUG: Fetching Label..." );
+				$label_response = $adapter->getLabel( $response['shipment_id'] );
+				error_log( "ZSS DEBUG: Label Response: " . print_r( $label_response, true ) );
 
 				if ( isset( $label_response['label_url'] ) ) {
 					// Extract AWB Code (Platform specific or normalized?)
