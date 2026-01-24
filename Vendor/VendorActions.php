@@ -389,8 +389,7 @@ class VendorActions {
 		// Track Event
 		\Zerohold\Shipping\Core\DokanShipmentSync::add_return_update( 
 			$order_id, 
-			'ss_return_initiated', 
-			'Return Initiated' 
+			'initiated' 
 		);
 
 		// Redirect to actual label
@@ -416,8 +415,7 @@ class VendorActions {
 		// Track Event
 		\Zerohold\Shipping\Core\DokanShipmentSync::add_return_update( 
 			$order_id, 
-			'ss_return_handover', 
-			'Return Handover To Warehouse' 
+			'handover' 
 		);
 
 		wp_send_json_success( 'Handover confirmed successfully' );

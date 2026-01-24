@@ -94,6 +94,16 @@ class ZeroHoldSmartShipping {
 				\Zerohold\Shipping\Admin\PincodeImportPage::register();
 			} );
 		}
+
+		// Register Refund Cleanup Hook
+		add_action( 'woocommerce_order_status_refunded', [ $this, 'cleanup_on_refund' ], 10, 1 );
+	}
+
+	/**
+	 * Triggered when order is refunded.
+	 */
+	public function cleanup_on_refund( $order_id ) {
+		\Zerohold\Shipping\Core\DokanShipmentSync::cleanup_return_tracking( $order_id );
 	}
 
 	public function run() {

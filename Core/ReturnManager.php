@@ -170,8 +170,7 @@ class ReturnManager {
 			// Track Event: In Transit
 			\Zerohold\Shipping\Core\DokanShipmentSync::add_return_update( 
 				$order_id, 
-				'ss_in_transit', 
-				'In transit' 
+				'transit'
 			);
 
 			return 'Return Shipment Created via ' . ucfirst($winner->platform) . ' (' . $winner->courier . ')';

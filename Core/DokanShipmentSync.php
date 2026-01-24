@@ -99,9 +99,9 @@ class DokanShipmentSync {
 	}
 
 	/**
-	 * Record a return-specific update in the Dokan Shipment Tracking table.
+	 * Record a return-specific update in the Dokan Shipment Tracking table as a separate entry.
 	 */
-	public static function add_return_update( $order_id, $status_slug, $status_label ) {
+	public static function add_return_update( $order_id, $stage ) {
 		global $wpdb;
 
 		$order = wc_get_order( $order_id );
@@ -123,29 +123,45 @@ class DokanShipmentSync {
 			return false;
 		}
 
-		// 1. ERASURE LOGIC: If this is the first return sync, erase old forward tracking data
-		$is_return_active = get_post_meta( $order_id, '_zh_return_tracking_active', true );
-		if ( ! $is_return_active ) {
-			$wpdb->delete( $table_name, [ 'order_id' => $order_id ], [ '%d' ] );
-			update_post_meta( $order_id, '_zh_return_tracking_active', 1 );
-		}
-
 		// Get return-specific details
 		$awb      = get_post_meta( $order_id, '_zh_return_awb', true ) ?: '-';
 		$courier  = get_post_meta( $order_id, '_zh_return_courier', true ) ?: 'Other';
 		$platform = get_post_meta( $order_id, '_zh_return_platform', true );
 
-		// Construct tracking URL (instead of label URL)
-		$url = '#';
+		// Construct tracking URL
+		$tracking_url = '#';
 		if ( ! empty( $awb ) && $awb !== '-' ) {
 			if ( $platform === 'shiprocket' ) {
-				$url = 'https://shiprocket.co/tracking/' . $awb;
+				$tracking_url = 'https://shiprocket.co/tracking/' . $awb;
 			} elseif ( $platform === 'bigship' ) {
-				$url = 'https://bigship.in/tracking?tracking_number=' . $awb;
+				$tracking_url = 'https://bigship.in/tracking?tracking_number=' . $awb;
 			}
 		}
 
-		// Reuse forward items for return (or keep empty if partial returns aren't tracked yet)
+		// Mapping for Stages
+		$status_slug  = 'ss_return_initiated';
+		$status_label = 'Return Initiated (Ready for Pickup)';
+		$message      = '';
+		$date         = current_time( 'M j, Y' );
+
+		switch ( $stage ) {
+			case 'initiated':
+				$status_slug  = 'ss_return_initiated';
+				$status_label = 'Return Initiated (Ready for Pickup)';
+				$message      = 'Download the return label, print it, and paste it securely on the package. Ensure the order is intact, properly packed, and undamaged. Incorrect packaging may lead to loss or rejection.';
+				break;
+			case 'transit':
+				$status_slug  = 'ss_in_transit';
+				$status_label = 'In Transit';
+				$message      = ''; // EMPTY as requested
+				break;
+			case 'handover':
+				$status_slug  = 'ss_return_handover';
+				$status_label = 'Return Handover to Warehouse';
+				$message      = 'Refund will be processed after seller quality check approval. For any assistance, please contact customer support.';
+				break;
+		}
+
 		$item_qty_map = [];
 		foreach ( $order->get_items() as $item_id => $item ) {
 			$item_qty_map[ $item_id ] = $item->get_quantity();
@@ -156,23 +172,42 @@ class DokanShipmentSync {
 			'seller_id'       => (int) $vendor_id,
 			'provider'        => 'sp-other',
 			'provider_label'  => $courier,
-			'provider_url'    => $url,
-			'number'          => $awb,
-			'date'            => current_time( 'M j, Y' ),
+			'provider_url'    => $tracking_url,
+			'number'          => '', // EMPTY as requested for Returns
+			'date'            => $date,
 			'shipping_status' => $status_slug,
 			'status_label'    => $status_label,
 			'is_notify'       => 'no',
 			'item_qty'        => wp_json_encode( $item_qty_map ),
+			'comments'        => $message,
 			'status'          => 1,
 		];
 
-		// 2. REFILL LOGIC: Update existing row if it exists, otherwise insert
-		$existing_id = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM $table_name WHERE order_id = %d LIMIT 1", $order_id ) );
+		// Identify existing return row if any (rows with return status slugs)
+		$return_statuses = [ 'ss_return_initiated', 'ss_in_transit', 'ss_return_handover' ];
+		$existing_id = $wpdb->get_var( $wpdb->prepare( 
+			"SELECT id FROM $table_name WHERE order_id = %d AND shipping_status IN ('" . implode("','", $return_statuses) . "') LIMIT 1", 
+			$order_id 
+		) );
 
 		if ( $existing_id ) {
 			return $wpdb->update( $table_name, $data, [ 'id' => $existing_id ] );
 		} else {
 			return $wpdb->insert( $table_name, $data );
 		}
+	}
+
+	/**
+	 * Cleanup return tracking entries when order is refunded.
+	 */
+	public static function cleanup_return_tracking( $order_id ) {
+		global $wpdb;
+		$table_name = $wpdb->prefix . 'dokan_shipping_tracking';
+		$return_statuses = [ 'ss_return_initiated', 'ss_in_transit', 'ss_return_handover' ];
+		
+		return $wpdb->query( $wpdb->prepare( 
+			"DELETE FROM $table_name WHERE order_id = %d AND shipping_status IN ('" . implode("','", $return_statuses) . "')", 
+			$order_id 
+		) );
 	}
 }
