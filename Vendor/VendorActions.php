@@ -118,6 +118,16 @@ class VendorActions {
 					update_post_meta( $order_id, '_zh_shiprocket_label_url', $label_response['label_url'] );
 					update_post_meta( $order_id, '_zh_shiprocket_label_status', 1 );
 					update_post_meta( $order_id, '_zh_shipping_platform', $winner_platform );
+
+					// TeraWallet Interaction: Debit Shipping Charge
+					$vendor_id = dokan_get_seller_id_by_order( $order_id );
+					if ( $vendor_id ) {
+						\Zerohold\Shipping\Core\WalletTransactionManager::debit_shipping_charge( 
+							$order_id, 
+							$winner->base, 
+							$vendor_id 
+						);
+					}
 				}
 			}
 		}
@@ -322,6 +332,18 @@ class VendorActions {
 					update_post_meta( $order_id, '_zh_shiprocket_label_status', 1 );
 					// Store platform used for this order
 					update_post_meta( $order_id, '_zh_shipping_platform', $winner_platform );
+
+					// TeraWallet Interaction: Debit Shipping Charge
+					$vendor_id = dokan_get_seller_id_by_order( $order_id );
+					if ( $vendor_id ) {
+						// Ensure base price is available
+						$cost = isset( $winner->base ) ? $winner->base : 0;
+						\Zerohold\Shipping\Core\WalletTransactionManager::debit_shipping_charge( 
+							$order_id, 
+							$cost, 
+							$vendor_id 
+						);
+					}
 
                     // BigShip Specific Storage
                     if ( $winner_platform === 'bigship' ) {

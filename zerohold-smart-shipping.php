@@ -78,6 +78,12 @@ class ZeroHoldSmartShipping {
 		// Initialize Vendor UI (shipping buttons)
 		new Vendor\VendorUI();
 
+        // Initialize Shipping Statement Page (New)
+        new Vendor\ShippingStatementPage();
+
+        // Initialize Wallet Transaction Manager (New)
+        new Core\WalletTransactionManager();
+
 		// Initialize Return Shipping MVP
 		new Admin\ReturnAdminUI();
 		new Core\ReturnManager();
@@ -114,6 +120,11 @@ class ZeroHoldSmartShipping {
 function zss_init() {
 	// Initialize Migration Runner
 	Core\MigrationRunner::run();
+	
+	// Initialize Safe Debug Listener (Removable)
+	if ( class_exists( 'Zerohold\Shipping\Core\DebugListener' ) ) {
+		new Core\DebugListener();
+	}
 
 	$plugin = new ZeroHoldSmartShipping();
 	$plugin->run();
