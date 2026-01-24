@@ -369,9 +369,14 @@ class VendorUI {
 
 		<script>
 		jQuery(function($) {
+			console.log("ZSS DEBUG: Shipping Estimate JS Loaded");
+			
 			// Find placing point: near dimension fields (_length is a good target)
 			const $target = $('#_length').closest('.dokan-form-group');
+			console.log("ZSS DEBUG: Target length field found:", $target.length);
+			
 			if ($target.length) {
+				console.log("ZSS DEBUG: Injecting Estimate UI");
 				const estimateHtml = `
 					<div class="zh-estimate-container">
 						<button type="button" id="zh-check-estimate" class="zh-check-estimate-btn">Check estimated delivery price</button>
