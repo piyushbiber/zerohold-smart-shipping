@@ -399,24 +399,22 @@ class BigShipAdapter implements PlatformInterface {
 		foreach ( (array) $destination_pincodes as $zone => $dest_pin ) {
 			// Create dummy shipment for weight-only getRates
 			$shipment = new \Zerohold\Shipping\Models\Shipment();
+			$shipment->order_id         = 'EST' . time() . rand(10,99); // Unique dummy ID
 			$shipment->from_pincode     = $origin_pincode;
 			$shipment->to_pincode       = $dest_pin;
 			$shipment->weight           = $slab;
-			$shipment->declared_value   = 1000; // Average value for estimate
+			$shipment->declared_value   = 1000;
 			$shipment->payment_mode     = 'Prepaid';
 			$shipment->direction        = 'forward';
 			$shipment->is_retailer_pickup = false;
-			
-			// BigShip requirement: items must exist to create draft order
-			$shipment->items = [[
-				'name' => 'Estimate Product',
-				'qty'  => 1,
-				'price' => 1000
-			]];
+			$shipment->items = [[ 'name' => 'Estimate Item', 'qty' => 1, 'price' => 1000 ]];
 			$shipment->qty = 1;
 
 			$rates = $this->getRates( $shipment );
-			if ( ! empty( $rates ) ) {
+			
+			if ( empty( $rates ) ) {
+				error_log( "ZSS DEBUG: BigShip Estimate FAILED for Zone $zone (Dest: $dest_pin). Check createDraftOrder output." );
+			} else {
 				$results[ $zone ] = $rates;
 			}
 		}
