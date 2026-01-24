@@ -129,6 +129,9 @@ class ShiprocketAdapter implements PlatformInterface {
 		$response = $this->client->post( 'courier/assign/awb', $payload );
 		error_log( "ZSS DEBUG: Shiprocket AWB Response: " . print_r( $response, true ) );
 
+		return $response;
+	}
+
 	public function getLabel( $shipment_id ) {
 		error_log( "ZSS DEBUG: Shiprocket Label Request for ID: " . $shipment_id );
 		return $this->client->post(
