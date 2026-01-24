@@ -178,6 +178,7 @@ class ShiprocketAdapter implements PlatformInterface {
 			$shipment->declared_value   = 1000;
 			$shipment->payment_mode     = 'Prepaid';
 			$shipment->direction        = 'forward';
+			$shipment->items            = [[ 'name' => 'Item', 'qty' => 1, 'price' => 1000 ]];
 
 			$rates = $this->getRates( $shipment );
 			if ( ! empty( $rates ) ) {

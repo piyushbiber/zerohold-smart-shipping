@@ -406,6 +406,14 @@ class BigShipAdapter implements PlatformInterface {
 			$shipment->payment_mode     = 'Prepaid';
 			$shipment->direction        = 'forward';
 			$shipment->is_retailer_pickup = false;
+			
+			// BigShip requirement: items must exist to create draft order
+			$shipment->items = [[
+				'name' => 'Estimate Product',
+				'qty'  => 1,
+				'price' => 1000
+			]];
+			$shipment->qty = 1;
 
 			$rates = $this->getRates( $shipment );
 			if ( ! empty( $rates ) ) {
