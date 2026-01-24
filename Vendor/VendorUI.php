@@ -426,8 +426,11 @@ class VendorUI {
 					btn.prop('disabled', false).text('Check estimated delivery price');
 					if (res.success) {
 						lastData = res.data;
-						// Use Vendor Share for the main summary display
-						$('.zh-price-range').text('₹' + res.data.vendor_min + ' – ₹' + res.data.vendor_max);
+						// Use Vendor Share for the main summary display (with fallback)
+						const vMin = res.data.vendor_min !== undefined ? res.data.vendor_min : Math.floor(res.data.min_price / 2);
+						const vMax = res.data.vendor_max !== undefined ? res.data.vendor_max : Math.ceil(res.data.max_price / 2);
+						
+						$('.zh-price-range').text('₹' + vMin + ' – ₹' + vMax);
 						$('#zh-estimate-summary').fadeIn();
 					} else {
 						alert(res.data || 'Could not fetch estimate. Try again.');

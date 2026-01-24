@@ -636,6 +636,10 @@ class VendorActions {
 		// 3. Cache Check
 		$cached = \Zerohold\Shipping\Core\EstimateCache::get( $vendor_id, $origin_pin, $final_slab );
 		if ( $cached ) {
+			// Ensure vendor share is calculated for cached results too
+			$cached['vendor_min'] = floor( $cached['min_price'] / 2 );
+			$cached['vendor_max'] = ceil( $cached['max_price'] / 2 );
+			
 			wp_send_json_success( array_merge( $cached, [ 'is_cached' => true, 'slab_info' => $slab_data ] ) );
 		}
 
