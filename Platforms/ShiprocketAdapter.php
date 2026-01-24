@@ -263,12 +263,19 @@ class ShiprocketAdapter implements PlatformInterface {
 		// Precise endpoint provided by user
 		$response = $this->client->get( 'account/details/wallet-balance' );
 
+		error_log( "ZSS DEBUG: Shiprocket Wallet Response: " . print_r( $response, true ) );
+
 		if ( is_wp_error( $response ) ) {
 			return 0;
 		}
 
-		// Robust extraction (check common keys)
-		$balance = $response['data']['balance'] ?? $response['data']['wallet_balance'] ?? 0;
+		// Robust extraction
+		$balance = $response['data']['balance'] ?? $response['data']['wallet_balance'] ?? $response['data'] ?? 0;
+		
+		if ( is_array( $balance ) ) {
+			$balance = $balance['balance'] ?? $balance['wallet_balance'] ?? 0;
+		}
+
 		return (float) $balance;
 	}
 

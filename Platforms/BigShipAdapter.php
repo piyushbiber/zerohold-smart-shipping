@@ -226,6 +226,8 @@ class BigShipAdapter implements PlatformInterface {
 
 		$response = $this->client->get( 'order/shipping/rates', $query );
 
+		error_log( "ZSS DEBUG: BigShip Rates Response: " . print_r( $response, true ) );
+
 		if ( is_wp_error( $response ) || empty( $response['data'] ) ) {
 			return [];
 		}
@@ -575,6 +577,8 @@ class BigShipAdapter implements PlatformInterface {
 	public function getWalletBalance() {
 		// Endpoint provided by user: api/Wallet/balance/get
 		$response = $this->client->get( 'Wallet/balance/get' );
+
+		error_log( "ZSS DEBUG: BigShip Wallet Response: " . print_r( $response, true ) );
 
 		if ( is_wp_error( $response ) || empty( $response['success'] ) ) {
 			return 0;
