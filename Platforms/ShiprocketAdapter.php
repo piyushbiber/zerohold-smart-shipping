@@ -168,6 +168,25 @@ class ShiprocketAdapter implements PlatformInterface {
 		return $this->client->get( 'courier/track/awb/' . $awb );
 	}
 
+	public function estimateRates( $origin_pincode, $destination_pincodes, $slab ) {
+		$results = [];
+		foreach ( (array) $destination_pincodes as $zone => $dest_pin ) {
+			$shipment = new \Zerohold\Shipping\Models\Shipment();
+			$shipment->from_pincode     = $origin_pincode;
+			$shipment->to_pincode       = $dest_pin;
+			$shipment->weight           = $slab;
+			$shipment->declared_value   = 1000;
+			$shipment->payment_mode     = 'Prepaid';
+			$shipment->direction        = 'forward';
+
+			$rates = $this->getRates( $shipment );
+			if ( ! empty( $rates ) ) {
+				$results[ $zone ] = $rates;
+			}
+		}
+		return $results;
+	}
+
 	/**
 	 * Creates a pickup location (warehouse) on Shiprocket.
 	 * 

@@ -20,6 +20,7 @@ class VendorActions {
 
 		// Step 2.6.4: Register AJAX handler
 		add_action( 'wp_ajax_zh_generate_label', [ $this, 'zh_handle_generate_label_ajax' ] );
+		add_action( 'wp_ajax_zh_get_on_demand_rates', [ $this, 'zh_get_on_demand_rates' ] );
 		add_action( 'wp_ajax_zh_confirm_return_handover', [ $this, 'zh_confirm_return_handover' ] );
 		
 		// Step 2.6.5: Register download handler
@@ -587,5 +588,132 @@ class VendorActions {
 		</html>
 		<?php
 		exit;
+	/**
+	 * AJAX Handler for On-Demand Shipping Estimates during Product Upload.
+	 */
+	public function zh_get_on_demand_rates() {
+		check_ajax_referer( 'zh_order_action_nonce', 'security' );
+
+		$weight = floatval( $_POST['weight'] ?? 0 );
+		$length = floatval( $_POST['length'] ?? 0 );
+		$width  = floatval( $_POST['width'] ?? 0 );
+		$height = floatval( $_POST['height'] ?? 0 );
+
+		if ( ! $weight ) {
+			wp_send_json_error( 'Weight is required for estimation.' );
+		}
+
+		// Garment Rule: Hard limit 10kg
+		if ( $weight > 10 ) {
+			$weight = 10;
+		}
+
+		$vendor_id = dokan_get_current_user_id();
+		if ( ! $vendor_id ) {
+			wp_send_json_error( 'Authentication failed.' );
+		}
+
+		// 1. Calculate Slab
+		$slab_data = \Zerohold\Shipping\Core\SlabEngine::calculate( $weight, $length, $width, $height );
+		$final_slab = $slab_data['slab'];
+
+		// 2. Identify Origin Pincode
+		$vendor_data = dokan_get_seller_address( $vendor_id );
+		$origin_pin  = $vendor_data['zip'] ?? '';
+
+		if ( empty( $origin_pin ) ) {
+			wp_send_json_error( 'Store pincode not found. Please update your vendor profile.' );
+		}
+
+		// 3. Cache Check
+		$cached = \Zerohold\Shipping\Core\EstimateCache::get( $vendor_id, $origin_pin, $final_slab );
+		if ( $cached ) {
+			wp_send_json_success( array_merge( $cached, [ 'is_cached' => true, 'slab_info' => $slab_data ] ) );
+		}
+
+		// 4. API Orchestration (BigShip Primary)
+		$resolver = new \Zerohold\Shipping\Core\ZoneResolver();
+		$hubs     = $resolver->zoneTable( $origin_pin );
+		
+		$bigship = new \Zerohold\Shipping\Platforms\BigShipAdapter();
+		$rates   = $bigship->estimateRates( $origin_pin, $hubs, $final_slab );
+
+		// Fallback to Shiprocket if no rates found
+		if ( empty( $rates ) ) {
+			$shiprocket = new \Zerohold\Shipping\Platforms\ShiprocketAdapter();
+			$rates      = $shiprocket->estimateRates( $origin_pin, $hubs, $final_slab );
+		}
+
+		if ( empty( $rates ) ) {
+			wp_send_json_error( 'Unable to fetch estimate right now. Please try again later.' );
+		}
+
+		// 5. Aggregate and Format for Modal
+		$zone_labels = \Zerohold\Shipping\Core\ZoneResolver::getZoneLabels();
+		$zone_breakdown = [];
+		$all_prices = [];
+
+		foreach ( $hubs as $zone_key => $pin ) {
+			$zone_rates = $rates[ $zone_key ] ?? [];
+			$min = 999999;
+			$max = 0;
+
+			foreach ( $zone_rates as $r ) {
+				$val = floatval( $r->base );
+				if ( $val < $min ) $min = $val;
+				if ( $val > $max ) $max = $val;
+			}
+
+			if ( $min === 999999 ) {
+				$min = 0;
+				$max = 0;
+			}
+
+			// Add range padding to look professional in UI
+			$range_min = floor($min);
+			$range_max = ceil($max ?: $min * 1.2); 
+
+			// 50/50 Split Rule
+			$buyer_min = floor( $range_min / 2 );
+			$buyer_max = ceil( $range_max / 2 );
+			$you_min   = $range_min - $buyer_min;
+			$you_max   = $range_max - $buyer_max;
+
+			$zone_breakdown[ $zone_key ] = [
+				'label'     => $zone_labels[ $zone_key ] ?? $zone_key,
+				'total_min' => $range_min,
+				'total_max' => $range_max,
+				'buyer_min' => $buyer_min,
+				'buyer_max' => $buyer_max,
+				'you_min'   => $you_min,
+				'you_max'   => $you_max,
+			];
+
+			if ( $range_min > 0 ) $all_prices[] = $range_min;
+			if ( $range_max > 0 ) $all_prices[] = $range_max;
+		}
+
+		// Overall Summary
+		$sum_min = ! empty( $all_prices ) ? min( $all_prices ) : 0;
+		$sum_max = ! empty( $all_prices ) ? max( $all_prices ) : 0;
+
+		// 6. Save to Cache
+		\Zerohold\Shipping\Core\EstimateCache::set( 
+			$vendor_id, 
+			$origin_pin, 
+			$final_slab, 
+			$sum_min, 
+			$sum_max, 
+			$zone_breakdown 
+		);
+
+		wp_send_json_success([
+			'min_price'      => $sum_min,
+			'max_price'      => $sum_max,
+			'zone_data'      => $zone_breakdown,
+			'slab_info'      => $slab_data,
+			'origin_pincode' => $origin_pin,
+			'is_cached'      => false
+		]);
 	}
 }

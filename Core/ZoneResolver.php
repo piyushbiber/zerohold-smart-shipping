@@ -15,30 +15,49 @@ class ZoneResolver {
 
 	/**
 	 * Resolves the shipping zone based on origin and destination pincodes.
+	 * Simplified version for internal logic.
 	 * 
 	 * @param string $origin_pincode
 	 * @param string $destination_pincode
 	 * @return string (A|B|C|D|E)
 	 */
 	public function resolve( $origin_pincode, $destination_pincode ) {
-		// return zone A/B/C/D/E
-		return 'A'; // Default for now
+		// Rule 1: Same Pincode = A
+		if ( $origin_pincode === $destination_pincode ) return 'A';
+
+		// Rule 2: Intra-state vs Inter-state (A/B vs C/D)
+		// This usually requires a full state map. For now we use the prefix-based example
+		// or return a default 'C' for most cases.
+		return 'C'; 
 	}
 
 	/**
 	 * Returns representative destination pincodes for bulk rate fetching.
+	 * These are static, admin-defined, and reused for all vendors.
 	 * 
-	 * @param string $vendor_pin
+	 * @param string $origin_pin
 	 * @return array
 	 */
-	public function zoneTable( $vendor_pin ) {
-		// return representative pincodes for rate fetch per zone
+	public function zoneTable( $origin_pin ) {
 		return [
-			'A' => '110001', // Example
-			'B' => '400001',
-			'C' => '560001',
-			'D' => '700001',
-			'E' => '799001',
+			'A' => $origin_pin, // Intra-city
+			'B' => '226001',    // Intra-state HUB (Lucknow Example)
+			'C' => '110001',    // Nearby Metro (Delhi)
+			'D' => '560001',    // Far Metro (Bangalore)
+			'E' => '781001',    // Remote (Guwahati)
+		];
+	}
+
+	/**
+	 * Get human readable labels for Zones.
+	 */
+	public static function getZoneLabels() {
+		return [
+			'A' => 'Same City',
+			'B' => 'Same State',
+			'C' => 'Nearby States',
+			'D' => 'Far States',
+			'E' => 'Remote / NE / J&K'
 		];
 	}
 }

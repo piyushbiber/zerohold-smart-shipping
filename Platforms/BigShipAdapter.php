@@ -394,6 +394,27 @@ class BigShipAdapter implements PlatformInterface {
 		return $this->client->get( 'tracking', $params );
 	}
 
+	public function estimateRates( $origin_pincode, $destination_pincodes, $slab ) {
+		$results = [];
+		foreach ( (array) $destination_pincodes as $zone => $dest_pin ) {
+			// Create dummy shipment for weight-only getRates
+			$shipment = new \Zerohold\Shipping\Models\Shipment();
+			$shipment->from_pincode     = $origin_pincode;
+			$shipment->to_pincode       = $dest_pin;
+			$shipment->weight           = $slab;
+			$shipment->declared_value   = 1000; // Average value for estimate
+			$shipment->payment_mode     = 'Prepaid';
+			$shipment->direction        = 'forward';
+			$shipment->is_retailer_pickup = false;
+
+			$rates = $this->getRates( $shipment );
+			if ( ! empty( $rates ) ) {
+				$results[ $zone ] = $rates;
+			}
+		}
+		return $results;
+	}
+
 	/**
 	 * Creates a warehouse on BigShip.
 	 * 
