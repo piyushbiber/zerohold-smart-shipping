@@ -340,7 +340,13 @@ class VendorActions {
 					update_post_meta( $order_id, '_zh_shipping_platform', $winner_platform );
 
 					// TeraWallet Interaction: Debit Shipping Charge
-					$vendor_id = dokan_get_seller_id_by_order( $order_id );
+					$vendor_id = 0;
+					if ( function_exists( 'dokan_get_seller_id_by_order' ) ) {
+						$vendor_id = dokan_get_seller_id_by_order( $order_id );
+					} else {
+						$vendor_id = $order->get_meta( '_dokan_vendor_id', true );
+					}
+
 					if ( $vendor_id ) {
 						// Ensure base price is available
 						$cost = isset( $winner->base ) ? $winner->base : 0;
