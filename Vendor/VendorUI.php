@@ -382,7 +382,7 @@ class VendorUI {
 					<div class="zh-estimate-container">
 						<button type="button" id="zh-check-estimate" class="zh-check-estimate-btn">Check estimated delivery price</button>
 						<div id="zh-estimate-summary" class="zh-estimate-summary">
-							Estimated delivery: <span class="zh-price-range">₹0 – ₹0</span> / box
+							Estimated delivery: <span class="zh-price-range">₹0 – ₹0</span> <small>(Your share)</small> / box
 							<span id="zh-view-breakdown" class="zh-view-breakdown">View zone-wise breakdown →</span>
 						</div>
 					</div>
@@ -426,7 +426,8 @@ class VendorUI {
 					btn.prop('disabled', false).text('Check estimated delivery price');
 					if (res.success) {
 						lastData = res.data;
-						$('.zh-price-range').text('₹' + res.data.min_price + ' – ₹' + res.data.max_price);
+						// Use Vendor Share for the main summary display
+						$('.zh-price-range').text('₹' + res.data.vendor_min + ' – ₹' + res.data.vendor_max);
 						$('#zh-estimate-summary').fadeIn();
 					} else {
 						alert(res.data || 'Could not fetch estimate. Try again.');

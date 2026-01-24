@@ -701,9 +701,12 @@ class VendorActions {
 			if ( $range_max > 0 ) $all_prices[] = $range_max;
 		}
 
-		// Overall Summary
+		// Overall Summary (Total vs Vendor Share)
 		$sum_min = ! empty( $all_prices ) ? min( $all_prices ) : 0;
 		$sum_max = ! empty( $all_prices ) ? max( $all_prices ) : 0;
+
+		$vendor_sum_min = floor( $sum_min / 2 );
+		$vendor_sum_max = ceil( $sum_max / 2 );
 
 		// 6. Save to Cache
 		\Zerohold\Shipping\Core\EstimateCache::set( 
@@ -718,6 +721,8 @@ class VendorActions {
 		wp_send_json_success([
 			'min_price'      => $sum_min,
 			'max_price'      => $sum_max,
+			'vendor_min'     => $vendor_sum_min,
+			'vendor_max'     => $vendor_sum_max,
 			'zone_data'      => $zone_breakdown,
 			'slab_info'      => $slab_data,
 			'origin_pincode' => $origin_pin,
