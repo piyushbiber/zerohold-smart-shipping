@@ -442,11 +442,16 @@ class VendorUI {
 				
 				const slab = lastData.slab_info;
 				
+				const isPack = $('#zh_field_box_length').length > 0;
+				const boxL = isPack ? $('#zh_field_box_length').val() : $('#_length').val();
+				const boxW = isPack ? $('#zh_field_box_width').val() : $('#_width').val();
+				const boxH = isPack ? $('#zh_field_box_height').val() : $('#_height').val();
+
 				let modalHtml = `
 					<div class="zh-section-title">BOX SUMMARY</div>
 					<table class="zh-modal-table">
 						<tr><td>Origin Pincode</td><td class="highlight">${lastData.origin_pincode} (Your Store)</td></tr>
-						<tr><td>Box Size</td><td class="highlight">${$('#_length').val() || 0} × ${$('#_width').val() || 0} × ${$('#_height').val() || 0} cm</td></tr>
+						<tr><td>Box Size</td><td class="highlight">${boxL || 0} × ${boxW || 0} × ${boxH || 0} cm</td></tr>
 						<tr><td>Chargeable Weight</td><td class="highlight">${slab.slab.toFixed(1)} kg</td></tr>
 						<tr><td>Calculation Basis</td><td class="highlight">Weight / Volumetric (whichever higher)</td></tr>
 					</table>

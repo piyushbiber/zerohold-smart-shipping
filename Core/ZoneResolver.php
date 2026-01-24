@@ -42,8 +42,8 @@ class ZoneResolver {
 		return [
 			'A' => $origin_pin, // Intra-city
 			'B' => '226001',    // Intra-state HUB (Lucknow Example)
-			'C' => '110001',    // Nearby Metro (Delhi)
-			'D' => '560001',    // Far Metro (Bangalore)
+			'C' => '302001',    // Nearby State (Jaipur) - Replaced Delhi for better coverage
+			'D' => '400001',    // Far State (Mumbai) - Replaced Bangalore for consistency
 			'E' => '781001',    // Remote (Guwahati)
 		];
 	}
