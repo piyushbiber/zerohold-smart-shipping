@@ -82,7 +82,7 @@ class ZeroHoldSmartShipping {
         // new Vendor\ShippingStatementPage();
 
         // Initialize Wallet Transaction Manager (New)
-        // new Core\WalletTransactionManager();
+        new Core\WalletTransactionManager();
 
 		// Initialize Return Shipping MVP
 		new Admin\ReturnAdminUI();
