@@ -149,7 +149,11 @@ class VendorActions {
 		// Step 2.6.6: Auto-Refresh Warehouse if needed
 		\Zerohold\Shipping\Core\WarehouseManager::checkAndRefresh( $shipment );
 
-		// 1. Get Enabled Platforms
+		// 1. Get Enabled Platforms & Initialize
+		$platforms = \Zerohold\Shipping\Core\PlatformManager::getEnabledPlatforms();
+		$quotes    = [];
+		$selector  = new \Zerohold\Shipping\Core\RateSelector();
+
 		// 2. Gather Quotes & Verify Balance
 		$retry = true;
 		$excluded_platforms = [];
