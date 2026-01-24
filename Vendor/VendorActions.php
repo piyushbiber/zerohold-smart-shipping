@@ -643,12 +643,31 @@ class VendorActions {
 			wp_send_json_success( array_merge( $cached, [ 'is_cached' => true, 'slab_info' => $slab_data ] ) );
 		}
 
-		// 4. API Orchestration (BigShip Primary)
+		// 1. Get Zone Representative Pincodes (DYNAMIC)
 		$resolver = new \Zerohold\Shipping\Core\ZoneResolver();
-		$hubs     = $resolver->zoneTable( $origin_pin );
+		$zone_pins = $resolver->zoneTable( $origin_pin );
+
+		// Dynamic Zone B: Find a pincode in the Vendor's own state
+		$vendor_state = $vendor_data['address']['state'] ?? '';
+		if ( ! empty( $vendor_state ) ) {
+			global $wpdb;
+			$table_map = $wpdb->prefix . 'zh_pincode_map';
+			
+			// Try to find a random pincode in the same state (excluding origin)
+			$dynamic_b = $wpdb->get_var( $wpdb->prepare(
+				"SELECT pincode FROM $table_map WHERE state = %s AND pincode != %s LIMIT 1",
+				$vendor_state,
+				$origin_pin
+			));
+
+			if ( $dynamic_b ) {
+				$zone_pins['B'] = $dynamic_b;
+				error_log( "ZSS DEBUG: Dynamic Zone B for $vendor_state: $dynamic_b" );
+			}
+		}
 		
 		$bigship = new \Zerohold\Shipping\Platforms\BigShipAdapter();
-		$rates   = $bigship->estimateRates( $origin_pin, $hubs, $final_slab );
+		$rates   = $bigship->estimateRates( $origin_pin, $zone_pins, $final_slab );
 
 		// Fallback to Shiprocket if no rates found
 		if ( empty( $rates ) ) {
