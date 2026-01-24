@@ -255,6 +255,9 @@ class ShiprocketAdapter implements PlatformInterface {
 			}
 		}
 
+		return new \WP_Error( 'sr_warehouse_failed', 'Failed to create Shiprocket Warehouse: ' . print_r( $response, true ) );
+	}
+
 
 	public function getWalletBalance() {
 		// Precise endpoint provided by user
