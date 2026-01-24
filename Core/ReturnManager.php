@@ -97,51 +97,94 @@ class ReturnManager {
 		$shipment = $mapper->map( $order, 'return' );
 		
 
-		// 2. Fetch Original Shipment Data for Priority
-		$orig_platform = get_post_meta( $order_id, 'zh_shipping_platform', true );
-		$orig_courier  = get_post_meta( $order_id, 'zh_courier_name', true );
-
+		// 2. Gather ALL AVAILABLE Quotes (to allow fallback)
 		$platforms = PlatformManager::getEnabledPlatforms();
-		$winner    = null;
+		$quotes    = [];
+		$excluded_platforms = [];
 
-		// 3. PRIORITY LOGIC: Same Platform + Same Courier
-		if ( $orig_platform && $orig_courier && isset( $platforms[ $orig_platform ] ) ) {
-			
-			$adapter = $platforms[ $orig_platform ];
-			$rates   = $adapter->getRates( $shipment ); 
-			$platform_rates = isset( $rates[ $orig_platform ] ) ? $rates[ $orig_platform ] : $rates;
+		foreach ( $platforms as $key => $adapter ) {
+			$quotes[ $key ] = $adapter->getRates( $shipment );
 
-			foreach ( (array) $platform_rates as $rate ) {
-				if ( ! is_object( $rate ) ) continue;
+			// PROACTIVE: Fetch balances and filter out broke platforms early
+			if ( ! empty( $quotes[ $key ] ) ) {
+				$balance = $adapter->getWalletBalance();
+				error_log( "ZSS BALANCE: Return platform {$key} has balance of {$balance}" );
 				
-				if ( strtolower( trim( $rate->courier ) ) === strtolower( trim( $orig_courier ) ) ) {
-					$winner = $rate;
-					break;
+				$local_best = 999999;
+				foreach ( (array) $quotes[ $key ] as $q ) {
+					$cost = is_object($q) ? $q->base : ( $q['base'] ?? 999999 );
+					if ( $cost < $local_best ) $local_best = $cost;
+				}
+
+				if ( $balance < $local_best ) {
+					error_log( "ZSS BALANCE: Proactively excluding return platform {$key} due to low balance ({$balance} < {$local_best})" );
+					$excluded_platforms[] = $key;
 				}
 			}
 		}
 
-		// 4. FALLBACK LOGIC: Standard ZSS Rate Logic
-		if ( ! $winner ) {
-			$quotes = [];
-			foreach ( $platforms as $key => $adapter ) {
-				$quotes[ $key ] = $adapter->getRates( $shipment );
+		$orig_platform = get_post_meta( $order_id, 'zh_shipping_platform', true );
+		$orig_courier  = get_post_meta( $order_id, 'zh_courier_name', true );
+
+		$retry = true;
+		$response = null;
+		$selected_adapter = null;
+		$selected_winner = null;
+
+		while ( $retry ) {
+			$winner = null;
+
+			// 3. PRIORITY LOGIC: Same Platform + Same Courier (Only if not excluded)
+			if ( $orig_platform && $orig_courier && isset( $quotes[ $orig_platform ] ) && ! in_array( $orig_platform, $excluded_platforms ) ) {
+				$platform_rates = $quotes[ $orig_platform ];
+				foreach ( (array) $platform_rates as $rate ) {
+					if ( ! is_object( $rate ) ) continue;
+					if ( strtolower( trim( $rate->courier ) ) === strtolower( trim( $orig_courier ) ) ) {
+						$winner = $rate;
+						break;
+					}
+				}
 			}
-			$selector = new RateSelector();
-			$winner   = $selector->selectBestRate( $quotes );
+
+			// 4. FALLBACK LOGIC: Standard ZSS Rate Logic (from non-excluded)
+			if ( ! $winner ) {
+				$active_quotes = [];
+				foreach ( $quotes as $key => $q ) {
+					if ( ! in_array( $key, $excluded_platforms ) ) {
+						$active_quotes[ $key ] = $q;
+					}
+				}
+				$selector = new RateSelector();
+				$winner   = $selector->selectBestRate( $active_quotes );
+			}
+
+			if ( ! $winner ) {
+				return new \WP_Error( 'no_rates', 'No shipping platforms with sufficient balance available for return.' );
+			}
+
+			// 5. Create Order (Book)
+			$shipment->courier     = $winner->courier;
+			$shipment->platform    = $winner->platform;
+			$shipment->courier_id  = $winner->courier_id ?? '';
+
+			$adapter = $platforms[ $winner->platform ];
+			error_log( "ZSS DEBUG: Attempting Return booking via " . ucfirst($winner->platform) );
+			$response = $adapter->createOrder( $shipment );
+
+			// 6. Balance Check Fallback
+			if ( $adapter->isBalanceError( $response ) ) {
+				error_log( "ZSS BALANCE: Return platform {$winner->platform} has insufficient balance. Excluding and retrying..." );
+				$excluded_platforms[] = $winner->platform;
+				continue; 
+			}
+
+			$selected_winner = $winner;
+			$selected_adapter = $adapter;
+			$retry = false;
 		}
 
-		if ( ! $winner ) {
-			return new \WP_Error( 'no_rates', 'No shipping routes available for return.' );
-		}
-
-		// 5. Create Order (Book)
-		$shipment->courier     = $winner->courier;
-		$shipment->platform    = $winner->platform;
-		$shipment->courier_id  = $winner->courier_id ?? '';
-
-		$adapter = $platforms[ $winner->platform ];
-		$response = $adapter->createOrder( $shipment );
+		$winner = $selected_winner;
+		$adapter = $selected_adapter;
 
 		if ( is_wp_error( $response ) ) {
 			return $response;

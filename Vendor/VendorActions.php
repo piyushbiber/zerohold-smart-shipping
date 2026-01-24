@@ -150,61 +150,94 @@ class VendorActions {
 		\Zerohold\Shipping\Core\WarehouseManager::checkAndRefresh( $shipment );
 
 		// 1. Get Enabled Platforms
-		$platforms = \Zerohold\Shipping\Core\PlatformManager::getEnabledPlatforms();
-		$quotes    = [];
+		// 2. Gather Quotes & Verify Balance
+		$retry = true;
+		$excluded_platforms = [];
+		
+		// PROACTIVE: Fetch balances and filter out broke platforms early
+		foreach ( $platforms as $key => $adapter ) {
+			$quotes[ $key ] = $adapter->getRates( $shipment );
+			
+			// Optional: Pre-filtering based on balance (if quotes exist)
+			if ( ! empty( $quotes[ $key ] ) ) {
+				$balance = $adapter->getWalletBalance();
+				error_log( "ZSS BALANCE: Platform {$key} has balance of {$balance}" );
+				
+				// Find cheapest for this platform
+				$local_best = 999999;
+				foreach ( (array) $quotes[ $key ] as $q ) {
+					$cost = is_object($q) ? $q->base : ( $q['base'] ?? 999999 );
+					if ( $cost < $local_best ) $local_best = $cost;
+				}
 
-		// 2. Gather Quotes
-		foreach ( $platforms as $key => $platform_adapter ) {
-			$quotes[ $key ] = $platform_adapter->getRates( $shipment );
+				if ( $balance < $local_best ) {
+					error_log( "ZSS BALANCE: Proactively excluding platform {$key} due to low balance ({$balance} < {$local_best})" );
+					$excluded_platforms[] = $key;
+				}
+			}
 		}
 
-		// 3. Select Winner
-		$selector = new \Zerohold\Shipping\Core\RateSelector();
-		$winner   = $selector->selectBestRate( $quotes );
+		$response = null;
+		$selected_adapter = null;
+		$selected_winner = null;
 
-		if ( ! $winner ) {
-			error_log( "ZSS ERROR: No shipping rates found for Order #{$order_id}" );
-			wp_send_json_error( 'No shipping rates available from enabled platforms.' );
-			return;
+		while ( $retry ) {
+			// 1. Filter Quotes
+			$active_quotes = [];
+			foreach ( $quotes as $key => $q ) {
+				if ( ! in_array( $key, $excluded_platforms ) ) {
+					$active_quotes[ $key ] = $q;
+				}
+			}
+
+			// 2. Select Winner
+			$winner = $selector->selectBestRate( $active_quotes );
+
+			if ( ! $winner ) {
+				error_log( "ZSS ERROR: No valid shipping rates (with balance) found for Order #{$order_id}" );
+				wp_send_json_error( 'No shipping rates available from platforms with sufficient balance.' );
+				return;
+			}
+
+			error_log( "ZSS DEBUG: Winner Selected: " . print_r( $winner, true ) );
+			$selected_winner = $winner;
+			$winner_platform = $winner->platform;
+			$adapter = $platforms[ $winner_platform ] ?? reset( $platforms );
+			$selected_adapter = $adapter;
+
+			// 3. Prepare Shipment for specific courier
+			$shipment->courier     = $winner->courier; 
+			$shipment->platform    = $winner_platform;
+			$shipment->courier_id  = $winner->courier_id ?? '';
+
+			// 4. Create Order (Book)
+			error_log( "ZSS DEBUG: Attempting createOrder via " . ucfirst($winner_platform) );
+			$response = $adapter->createOrder( $shipment );
+			error_log( "ZSS DEBUG: createOrder Response: " . print_r( $response, true ) );
+
+			// 5. Balance Check Fallback
+			if ( $adapter->isBalanceError( $response ) ) {
+				error_log( "ZSS BALANCE: Platform {$winner_platform} has insufficient balance. Excluding and retrying..." );
+				$excluded_platforms[] = $winner_platform;
+				continue; // Loop again to pick next best
+			}
+
+			// Stop loop if success or other fatal error
+			$retry = false;
 		}
 
-		error_log( "ZSS DEBUG: Winner Selected: " . print_r( $winner, true ) );
+		$winner_platform = $selected_winner->platform;
+		$adapter = $selected_adapter;
 
-		$winner_platform = $winner->platform; // 'shiprocket', 'nimbus', etc.
-		// Note from Phase-4 logic: we need to use the ADAPTER of the winner to book.
-		// But wait, $winner->platform gives us the string key.
-		// We can get the adapter from $platforms array IF it matches the key.
-		// HOWEVER, RateNormalizer sets platform string. 
-		// ShiprocketAdapter sets 'shiprocket'. RateNormalizer default for SR is ?? 
-		// Let's assume standard keys match.
-		
-		// If winner is 'nimbus', we need nimbus adapter.
-		// But if Nimbus is parked (commented out), we shouldn't have gotten a quote from it unless...
-		// Ah, we only fetch quotes from enabled platforms. So winner MUST be from one of them.
-		
-		$adapter = $platforms[ $winner_platform ] ?? reset( $platforms ); // fallback
-		
-
-		// 4. Create Order (Book)
-		// We might need to pass selected courier info to the adapter?
-		// ShiprocketAdapter doesn't seem to take courier ID in createOrder, it does "adhoc" then "generateAWB".
-		// Nimbus takes it directly.
-		// We should enhance $shipment with selection info.
-		$shipment->courier  = $winner->courier; 
-		$shipment->platform = $winner_platform;
-		// Add courier_id for BigShip
-		if ( ! empty( $winner->courier_id ) ) {
-			$shipment->courier_id = $winner->courier_id;
-		}
-		
-		error_log( "ZSS DEBUG: Calling createOrder via " . ucfirst($winner_platform) );
-		$response = $adapter->createOrder( $shipment );
-		error_log( "ZSS DEBUG: createOrder Response: " . print_r( $response, true ) );
-		
-		// Check for WP_Error
+		// Check for WP_Error (non-balance fatal errors)
 		if ( is_wp_error( $response ) ) {
 			error_log( "ZSS ERROR: createOrder WP_Error: " . $response->get_error_message() );
 			wp_send_json_error( 'Order creation failed: ' . $response->get_error_message() );
+			return;
+		}
+
+		if ( ! empty( $response['error'] ) && empty( $response['shipment_id'] ) ) {
+			wp_send_json_error( 'Order creation failed: ' . $response['error'] );
 			return;
 		}
 

@@ -571,4 +571,26 @@ class BigShipAdapter implements PlatformInterface {
 		}
 		return $string;
 	}
+
+	public function getWalletBalance() {
+		// Endpoint provided by user: api/Wallet/balance/get
+		$response = $this->client->get( 'Wallet/balance/get' );
+
+		if ( is_wp_error( $response ) || empty( $response['success'] ) ) {
+			return 0;
+		}
+
+		// User provided response: { "data": "20854.61", "success": true, ... }
+		return (float) ( $response['data'] ?? 0 );
+	}
+
+	public function isBalanceError( $response ) {
+		if ( is_wp_error( $response ) ) {
+			$msg = $response->get_error_message();
+		} else {
+			$msg = $response['message'] ?? $response['error'] ?? '';
+		}
+
+		return ( stripos( $msg, 'balance' ) !== false || stripos( $msg, 'insufficient' ) !== false || stripos( $msg, 'credit' ) !== false );
+	}
 }

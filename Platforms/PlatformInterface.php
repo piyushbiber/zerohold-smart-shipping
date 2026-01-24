@@ -12,4 +12,6 @@ interface PlatformInterface {
 	public function generateAWB( $shipment_id );
 	public function getLabel( $shipment_id );
 	public function track( $shipment_id );
+	public function getWalletBalance();
+	public function isBalanceError( $response );
 }

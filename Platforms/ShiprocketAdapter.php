@@ -255,6 +255,27 @@ class ShiprocketAdapter implements PlatformInterface {
 			}
 		}
 
-		return new \WP_Error( 'sr_warehouse_failed', 'Failed to create Shiprocket Warehouse: ' . print_r( $response, true ) );
+
+	public function getWalletBalance() {
+		// Precise endpoint provided by user
+		$response = $this->client->get( 'account/details/wallet-balance' );
+
+		if ( is_wp_error( $response ) ) {
+			return 0;
+		}
+
+		// Robust extraction (check common keys)
+		$balance = $response['data']['balance'] ?? $response['data']['wallet_balance'] ?? 0;
+		return (float) $balance;
+	}
+
+	public function isBalanceError( $response ) {
+		if ( is_wp_error( $response ) ) {
+			$msg = $response->get_error_message();
+		} else {
+			$msg = $response['message'] ?? '';
+		}
+
+		return ( stripos( $msg, 'balance' ) !== false || stripos( $msg, 'insufficient' ) !== false || stripos( $msg, 'wallet' ) !== false );
 	}
 }
