@@ -14,6 +14,10 @@ class VendorActions {
 		add_action( 'admin_post_zh_generate_label', [ $this, 'zh_handle_generate_label' ] );
 		add_action( 'admin_post_nopriv_zh_generate_label', [ $this, 'zh_handle_generate_label' ] );
 		
+		// Tracking Proxy Handler
+		add_action( 'admin_post_zh_track_shipment', [ $this, 'zh_track_shipment' ] );
+		add_action( 'admin_post_nopriv_zh_track_shipment', [ $this, 'zh_track_shipment' ] );
+
 		// Step 2.6.4: Register AJAX handler
 		add_action( 'wp_ajax_zh_generate_label', [ $this, 'zh_handle_generate_label_ajax' ] );
 		add_action( 'wp_ajax_zh_confirm_return_handover', [ $this, 'zh_confirm_return_handover' ] );
@@ -22,6 +26,10 @@ class VendorActions {
 		add_action( 'admin_post_zh_download_label', [ $this, 'zh_download_label' ] );
 		add_action( 'admin_post_zh_download_return_label', [ $this, 'zh_download_return_label' ] );
 		add_action( 'admin_post_nopriv_zh_download_return_label', [ $this, 'zh_download_return_label' ] );
+
+		// Tracking Proxy Handler
+		add_action( 'admin_post_zh_track_shipment', [ $this, 'zh_track_shipment' ] );
+		add_action( 'admin_post_nopriv_zh_track_shipment', [ $this, 'zh_track_shipment' ] );
 
 		// Hook: Flag vendor for warehouse refresh on profile update
 		add_action( 'dokan_store_profile_saved', [ '\Zerohold\Shipping\Core\WarehouseManager', 'flagVendorForRefresh' ] );
@@ -322,6 +330,9 @@ class VendorActions {
                          if ( isset( $awb_response['awb_code'] ) ) {
                              update_post_meta( $order_id, '_zh_awb', $awb_response['awb_code'] );
                          }
+                         if ( ! empty( $awb_response['lr_number'] ) ) {
+                             update_post_meta( $order_id, '_zh_bigship_lr_number', $awb_response['lr_number'] );
+                         }
                          if ( isset( $awb_response['courier_name'] ) ) {
                              update_post_meta( $order_id, '_zh_courier', $awb_response['courier_name'] );
                          }
@@ -372,7 +383,8 @@ class VendorActions {
 							$sync_url = 'https://shiprocket.co/tracking/' . $sync_awb;
 						} elseif ( $winner_platform === 'bigship' ) {
 							$sync_courier = $awb_response['courier_name'] ?? $winner->courier;
-							$sync_url = 'https://bigship.in/tracking?tracking_number=' . $sync_awb;
+							// Proxy URL for BigShip (since they don't provide a parametric one)
+							$sync_url = admin_url( 'admin-post.php?action=zh_track_shipment&order_id=' . $order_id );
 						}
 
 						\Zerohold\Shipping\Core\DokanShipmentSync::sync_shipment( $order_id, $sync_awb, $sync_courier, $sync_url );
@@ -475,5 +487,105 @@ class VendorActions {
 		);
 
 		wp_send_json_success( 'Handover confirmed successfully' );
+	}
+
+	/**
+	 * Proxy handler for real-time shipment tracking.
+	 * Fetches data via API and displays a simple tracking UI.
+	 */
+	public function zh_track_shipment() {
+		if ( empty( $_GET['order_id'] ) ) {
+			wp_die( 'Missing Order ID' );
+		}
+
+		$order_id = intval( $_GET['order_id'] );
+		$platform = get_post_meta( $order_id, '_zh_shipping_platform', true );
+		$awb      = get_post_meta( $order_id, '_zh_shiprocket_awb', true ) ?: get_post_meta( $order_id, '_zh_awb', true );
+		$lrn      = get_post_meta( $order_id, '_zh_bigship_lr_number', true );
+
+		if ( ! $awb && ! $lrn ) {
+			wp_die( 'Tracking information not found for this order.' );
+		}
+
+		// Use LRN if available for BigShip, otherwise AWB
+		$tracking_id = ( $platform === 'bigship' && ! empty( $lrn ) ) ? $lrn : $awb;
+		$tracking_type = ( $platform === 'bigship' && ! empty( $lrn ) ) ? 'lrn' : 'awb';
+
+		// Get Adapter
+		$adapter = null;
+		if ( $platform === 'shiprocket' ) {
+			$adapter = new \Zerohold\Shipping\Platforms\ShiprocketAdapter();
+		} elseif ( $platform === 'bigship' ) {
+			$adapter = new \Zerohold\Shipping\Platforms\BigShipAdapter();
+		}
+
+		if ( ! $adapter ) {
+			wp_die( 'Shipping platform not supported for tracking.' );
+		}
+
+		// Fetch Data
+		$tracking_data = $platform === 'bigship' ? $adapter->track( $tracking_id, $tracking_type ) : $adapter->track( $tracking_id );
+
+		// Display Tracking Page
+		?>
+		<html>
+		<head>
+			<title>Track Order #<?php echo $order_id; ?></title>
+			<style>
+				body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 20px; background: #f0f2f5; color: #1c1e21; }
+				.track-card { max-width: 600px; margin: 0 auto; background: #fff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); padding: 25px; }
+				h1 { font-size: 24px; margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+				.status-badge { display: inline-block; padding: 6px 12px; border-radius: 20px; background: #e7f3ff; color: #1877f2; font-weight: bold; font-size: 14px; margin-bottom: 20px; text-transform: uppercase; }
+				.history-item { border-left: 2px solid #e4e6eb; padding-left: 20px; position: relative; padding-bottom: 20px; }
+				.history-item::before { content: ""; position: absolute; left: -7px; top: 0; width: 12px; height: 12px; border-radius: 50%; background: #bcc0c4; }
+				.history-item.latest::before { background: #1877f2; }
+				.history-date { font-size: 12px; color: #65676b; margin-bottom: 4px; }
+				.history-status { font-weight: bold; font-size: 15px; margin-bottom: 2px; }
+				.history-remark { font-size: 14px; color: #4b4f56; }
+				.history-location { font-size: 12px; font-style: italic; color: #65676b; }
+                .no-history { text-align: center; color: #65676b; padding: 40px 0; }
+                .header-info { margin-bottom: 25px; font-size: 15px; }
+                .header-info span { font-weight: bold; margin-right: 15px; }
+			</style>
+		</head>
+		<body>
+			<div class="track-card">
+				<h1>Tracking Information</h1>
+                
+                <div class="header-info">
+                    <div><span>Order ID:</span> #<?php echo $order_id; ?></div>
+                    <div><span>Carrier:</span> <?php echo ucfirst($platform); ?></div>
+                    <div><span>Tracking ID:</span> <?php echo $tracking_id; ?> (<?php echo strtoupper($tracking_type); ?>)</div>
+                </div>
+
+				<?php if ( empty( $tracking_data['data']['scan_histories'] ) ): ?>
+					<div class="status-badge"><?php echo $tracking_data['data']['order_detail']['current_tracking_status'] ?? 'Processing'; ?></div>
+                    <div class="no-history">No tracking history found yet. Please check back later.</div>
+				<?php else: 
+					$histories = $tracking_data['data']['scan_histories'];
+					$latest = reset($histories);
+					?>
+					<div class="status-badge"><?php echo $latest['scan_status'] ?? 'In Transit'; ?></div>
+
+					<div class="history-container">
+						<?php foreach ( $histories as $index => $scan ): ?>
+							<div class="history-item <?php echo $index === 0 ? 'latest' : ''; ?>">
+								<div class="history-date"><?php echo $scan['scan_datetime']; ?></div>
+								<div class="history-status"><?php echo $scan['scan_status']; ?></div>
+								<?php if ( ! empty( $scan['scan_remarks'] ) ): ?>
+									<div class="history-remark"><?php echo $scan['scan_remarks']; ?></div>
+								<?php endif; ?>
+								<?php if ( ! empty( $scan['scan_location'] ) ): ?>
+									<div class="history-location"><?php echo $scan['scan_location']; ?></div>
+								<?php endif; ?>
+							</div>
+						<?php endforeach; ?>
+					</div>
+				<?php endif; ?>
+			</div>
+		</body>
+		</html>
+		<?php
+		exit;
 	}
 }

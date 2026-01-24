@@ -332,6 +332,7 @@ class BigShipAdapter implements PlatformInterface {
         if ( ! empty( $response['data']['master_awb'] ) ) {
             return [
                 'awb_code'     => $response['data']['master_awb'],
+                'lr_number'    => $response['data']['lr_number'] ?? '',
                 'courier_name' => $response['data']['courier_name'] ?? '',
                 'courier_id'   => $response['data']['courier_id'] ?? '',
                 // Identifying success for VendorActions
@@ -383,8 +384,14 @@ class BigShipAdapter implements PlatformInterface {
         return $response; 
 	}
 
-	public function track( $shipment_id ) {
-		return $this->client->get( 'shipment/track/' . $shipment_id );
+	public function track( $tracking_id, $type = 'awb' ) {
+		// Endpoint provided by user: /api/tracking?tracking_type=...&tracking_id=...
+		$params = [
+			'tracking_type' => $type,
+			'tracking_id'   => $tracking_id
+		];
+		
+		return $this->client->get( 'tracking', $params );
 	}
 
 	/**

@@ -163,7 +163,10 @@ class ShiprocketAdapter implements PlatformInterface {
 		);
 	}
 
-	public function track( $shipment_id ) { return null; }
+	public function track( $awb ) {
+		// GET /courier/track/awb/[AWB]
+		return $this->client->get( 'courier/track/awb/' . $awb );
+	}
 
 	/**
 	 * Creates a pickup location (warehouse) on Shiprocket.

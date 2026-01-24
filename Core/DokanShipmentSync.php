@@ -134,7 +134,8 @@ class DokanShipmentSync {
 			if ( $platform === 'shiprocket' ) {
 				$tracking_url = 'https://shiprocket.co/tracking/' . $awb;
 			} elseif ( $platform === 'bigship' ) {
-				$tracking_url = 'https://bigship.in/tracking?tracking_number=' . $awb;
+				// Proxy URL for BigShip
+				$tracking_url = admin_url( 'admin-post.php?action=zh_track_shipment&order_id=' . $order_id );
 			}
 		}
 
