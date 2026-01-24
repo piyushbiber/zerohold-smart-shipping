@@ -180,22 +180,14 @@ class DokanShipmentSync {
 			'status_label'    => $status_label,
 			'is_notify'       => 'no',
 			'item_qty'        => wp_json_encode( $item_qty_map ),
-			'comments'        => $message,
 			'status'          => 1,
 		];
 
-		// Identify existing return row if any (rows with return status slugs)
-		$return_statuses = [ 'ss_return_initiated', 'ss_in_transit', 'ss_return_handover' ];
-		$existing_id = $wpdb->get_var( $wpdb->prepare( 
-			"SELECT id FROM $table_name WHERE order_id = %d AND shipping_status IN ('" . implode("','", $return_statuses) . "') LIMIT 1", 
-			$order_id 
-		) );
+		// User Requirement: Previous tracking entries should be erased for Returns
+		$wpdb->delete( $table_name, [ 'order_id' => $order_id ] );
 
-		if ( $existing_id ) {
-			return $wpdb->update( $table_name, $data, [ 'id' => $existing_id ] );
-		} else {
-			return $wpdb->insert( $table_name, $data );
-		}
+		// Insert new return/status row
+		return $wpdb->insert( $table_name, $data );
 	}
 
 	/**
