@@ -619,12 +619,18 @@ class VendorActions {
 		$slab_data = \Zerohold\Shipping\Core\SlabEngine::calculate( $weight, $length, $width, $height );
 		$final_slab = $slab_data['slab'];
 
-		// 2. Identify Origin Pincode
+		// 2. Identify Origin Pincode (Robust Search)
 		$vendor_data = dokan_get_seller_address( $vendor_id );
 		$origin_pin  = $vendor_data['zip'] ?? '';
 
+		// Log for internal tracing if zip is missing from primary Dokan function
 		if ( empty( $origin_pin ) ) {
-			wp_send_json_error( 'Store pincode not found. Please update your vendor profile.' );
+			// Fallback: Check standard User Meta if Dokan helper fails
+			$origin_pin = get_user_meta( $vendor_id, 'billing_postcode', true );
+		}
+
+		if ( empty( $origin_pin ) ) {
+			wp_send_json_error( 'Store pincode not found. Please ensure your Store Address (ZIP code) is set in Settings > Store.' );
 		}
 
 		// 3. Cache Check

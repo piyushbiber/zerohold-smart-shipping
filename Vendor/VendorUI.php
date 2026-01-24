@@ -371,9 +371,9 @@ class VendorUI {
 		jQuery(function($) {
 			console.log("ZSS DEBUG: Shipping Estimate JS Loaded");
 			
-			// Find placing point: near dimension fields (_length is a good target)
-			const $target = $('#_length').closest('.dokan-form-group');
-			console.log("ZSS DEBUG: Target length field found:", $target.length);
+			// Support both standard Dokan (#_length) AND ZeroHold custom Pack Setup (#zh_field_box_length)
+			const $target = $('#_length, #zh_field_box_length').first().closest('.dokan-form-group');
+			console.log("ZSS DEBUG: Target dimension field found:", $target.length);
 			
 			if ($target.length) {
 				console.log("ZSS DEBUG: Injecting Estimate UI");
@@ -394,10 +394,13 @@ class VendorUI {
 			$(document).on('click', '#zh-check-estimate', function(e) {
 				e.preventDefault();
 				const btn = $(this);
-				const weight = $('#_weight').val();
-				const l = $('#_length').val();
-				const w = $('#_width').val();
-				const h = $('#_height').val();
+				
+				// Dynamically find inputs based on current form type
+				const isPack = $('#zh_field_box_weight').length > 0;
+				const weight = isPack ? $('#zh_field_box_weight').val() : $('#_weight').val();
+				const l = isPack ? $('#zh_field_box_length').val() : $('#_length').val();
+				const w = isPack ? $('#zh_field_box_width').val() : $('#_width').val();
+				const h = isPack ? $('#zh_field_box_height').val() : $('#_height').val();
 
 				if (!weight || weight == 0) {
 					alert('Please enter box weight first.');
