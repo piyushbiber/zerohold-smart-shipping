@@ -270,10 +270,10 @@ class ShiprocketAdapter implements PlatformInterface {
 		}
 
 		// Robust extraction
-		$balance = $response['data']['balance'] ?? $response['data']['wallet_balance'] ?? $response['data'] ?? 0;
+		$balance = $response['data']['balance_amount'] ?? $response['data']['balance'] ?? $response['data']['wallet_balance'] ?? $response['data'] ?? 0;
 		
 		if ( is_array( $balance ) ) {
-			$balance = $balance['balance'] ?? $balance['wallet_balance'] ?? 0;
+			$balance = $balance['balance_amount'] ?? $balance['balance'] ?? $balance['wallet_balance'] ?? 0;
 		}
 
 		return (float) $balance;

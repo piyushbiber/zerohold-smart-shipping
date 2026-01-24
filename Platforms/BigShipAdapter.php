@@ -195,15 +195,25 @@ class BigShipAdapter implements PlatformInterface {
             return $matches[1];
         }
 
-        // Fallback: Check if success is false
-		if ( isset( $response['success'] ) && $response['success'] == false ) {
-			// If already exists, we might need to "Search" for it? OR Update?
-            // Docs don't mention update. Assuming we just need the ID.
-            // If "Order already exists", maybe we can parse ID from message?
-            return new \WP_Error( 'bigship_order_error', $response['message'] ?? 'BigShip Order Creation Failed' );
-		}
+        // BigShip 202/Exists Handling
+        if ( (isset($response['responseCode']) && $response['responseCode'] == 202) || stripos($data_str, 'exists') !== false || stripos($response['message'] ?? '', 'exists') !== false ) {
+            error_log("ZSS DEBUG: BigShip Order already exists. Attempting recovery...");
+            
+            // Try to parse ID from message if data is empty but message has it
+            if ( preg_match( '/is (\d+)/', $response['message'] ?? '', $m ) ) {
+                return $m[1];
+            }
 
-		return null; // Should have been caught by regex
+            // Fallback: Check if we already have it stored in meta
+            $stored_id = get_post_meta( $shipment->order_id, '_zh_bigship_system_order_id', true );
+            if ( $stored_id ) {
+                return $stored_id;
+            }
+
+            return new \WP_Error( 'bigship_exists_no_id', 'BigShip order exists but system ID could not be recovered.' );
+        }
+
+		return null; 
 	}
 
 	public function getRates( $shipment ) {
