@@ -352,7 +352,7 @@ class VendorActions {
 						$cost = isset( $winner->base ) ? $winner->base : 0;
 						update_post_meta( $order_id, '_zh_shipping_cost', $cost );
 						update_post_meta( $order_id, '_zh_shipping_date', current_time( 'mysql' ) );
-						error_log( "ZSS: Stored shipping cost ₹{$cost} in order meta" );
+						error_log( "ZSS: Stored shipping cost ₹{$cost} in order meta for Order #{$order_id}" );
 					}
 
                     // BigShip Specific Storage
@@ -380,7 +380,7 @@ class VendorActions {
 
 					// Phase-1 Pickup: Schedule pickup for Shiprocket orders
 					if ( $winner_platform === 'shiprocket' && method_exists( $adapter, 'generatePickup' ) ) {
-						
+						$pickup_response = $adapter->generatePickup( $response['shipment_id'] );
 						if ( ! is_wp_error( $pickup_response ) && isset( $pickup_response['pickup_status'] ) && $pickup_response['pickup_status'] == 1 ) {
 							// Pickup scheduled successfully
 							update_post_meta( $order_id, '_zh_shiprocket_pickup_status', 1 );

@@ -123,17 +123,22 @@ class DokanStatementIntegration {
 	private function query_shipping_orders( $vendor_id, $start_date, $end_date ) {
 		global $wpdb;
 
+		// Debug query: Check if ANY _zh_shipping_cost entries exist at all
+		$check = $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key = '_zh_shipping_cost'" );
+		error_log( "ZSS DEBUG: Global count of _zh_shipping_cost in postmeta: " . $check );
+
 		// Query orders that have shipping cost meta
+		// Note: We use a more permissive query to handle potential HPOS or custom post types
 		$sql = "
 			SELECT 
 				p.ID as order_id,
 				pm1.meta_value as shipping_cost,
 				pm2.meta_value as shipping_date
-			FROM {$wpdb->posts} p
-			INNER JOIN {$wpdb->postmeta} pm1 ON p.ID = pm1.post_id AND pm1.meta_key = '_zh_shipping_cost'
+			FROM {$wpdb->postmeta} pm1
+			INNER JOIN {$wpdb->posts} p ON p.ID = pm1.post_id
 			INNER JOIN {$wpdb->postmeta} pm2 ON p.ID = pm2.post_id AND pm2.meta_key = '_zh_shipping_date'
 			INNER JOIN {$wpdb->postmeta} pm3 ON p.ID = pm3.post_id AND pm3.meta_key = '_dokan_vendor_id'
-			WHERE p.post_type = 'shop_order'
+			WHERE pm1.meta_key = '_zh_shipping_cost'
 			AND pm3.meta_value = %d
 			AND DATE(pm2.meta_value) >= %s
 			AND DATE(pm2.meta_value) <= %s
