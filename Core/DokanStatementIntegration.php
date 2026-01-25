@@ -155,7 +155,17 @@ class DokanStatementIntegration {
 			ORDER BY t.date ASC
 		";
 
-		return $wpdb->get_results( $wpdb->prepare( $sql, $vendor_id, $start_date, $end_date ) );
+		$prepared_sql = $wpdb->prepare( $sql, $vendor_id, $start_date, $end_date );
+		error_log( "ZSS: Executing wallet query: " . $prepared_sql );
+
+		$results = $wpdb->get_results( $prepared_sql );
+		
+		error_log( "ZSS: Raw query result count: " . count( $results ) );
+		if ( $wpdb->last_error ) {
+			error_log( "ZSS: SQL Error: " . $wpdb->last_error );
+		}
+
+		return $results;
 	}
 
 	/**
