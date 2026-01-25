@@ -80,7 +80,7 @@ class ZeroHoldSmartShipping {
 
         // Initialize Shipping Statement Page (New)
         require_once __DIR__ . '/Vendor/ShippingStatementPage.php';
-        new Vendor\ShippingStatementPage();
+        new \ZH_Shipping_Statement_Unique();
 
         // Initialize Wallet Transaction Manager (New)
         new Core\WalletTransactionManager();
