@@ -123,9 +123,26 @@ class DokanStatementIntegration {
 	private function query_shipping_orders( $vendor_id, $start_date, $end_date ) {
 		global $wpdb;
 
+		// HPOS Check
+		$hpos_active = false;
+		if ( class_exists( '\Automattic\WooCommerce\Utilities\OrderUtil' ) && \Automattic\WooCommerce\Utilities\OrderUtil::custom_orders_table_usage_is_enabled() ) {
+			$hpos_active = true;
+		}
+		error_log( "ZSS DEBUG: HPOS Active: " . ($hpos_active ? 'Yes' : 'No') );
+
 		// Debug query: Check if ANY _zh_shipping_cost entries exist at all
 		$check = $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key = '_zh_shipping_cost'" );
 		error_log( "ZSS DEBUG: Global count of _zh_shipping_cost in postmeta: " . $check );
+		
+		if ( $check > 0 ) {
+			// Find one example post_id to see what's going on
+			$example_id = $wpdb->get_var( "SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_zh_shipping_cost' LIMIT 1" );
+			error_log( "ZSS DEBUG: Example Order ID with shipping cost: " . $example_id );
+			
+			// Check vendor ID for this specific example
+			$example_vendor = get_post_meta( $example_id, '_dokan_vendor_id', true );
+			error_log( "ZSS DEBUG: Vendor ID for example order #{$example_id} is: '{$example_vendor}' (Expected: {$vendor_id})" );
+		}
 
 		// Query orders that have shipping cost meta
 		// Note: We use a more permissive query to handle potential HPOS or custom post types
