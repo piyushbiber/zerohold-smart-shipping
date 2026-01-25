@@ -78,9 +78,7 @@ class ZeroHoldSmartShipping {
 		// Initialize Vendor UI (shipping buttons)
 		new Vendor\VendorUI();
 
-        // Initialize Shipping Statement Page (New)
-        require_once __DIR__ . '/zh-shipping-statement.php';
-        new \Zerohold\Shipping\RootShippingStatementPage();
+
 
 
         // Initialize Dokan Statement Integration (Immutable Ledger)
