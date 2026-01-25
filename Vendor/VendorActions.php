@@ -348,13 +348,11 @@ class VendorActions {
 					}
 
 					if ( $vendor_id ) {
-						// Ensure base price is available
+						// Store shipping cost in order meta for Dokan Statement display
 						$cost = isset( $winner->base ) ? $winner->base : 0;
-						\Zerohold\Shipping\Core\WalletTransactionManager::debit_shipping_charge( 
-							$order_id, 
-							$cost, 
-							$vendor_id 
-						);
+						update_post_meta( $order_id, '_zh_shipping_cost', $cost );
+						update_post_meta( $order_id, '_zh_shipping_date', current_time( 'mysql' ) );
+						error_log( "ZSS: Stored shipping cost ₹{$cost} in order meta" );
 					}
 
                     // BigShip Specific Storage

@@ -82,8 +82,6 @@ class ZeroHoldSmartShipping {
         require_once __DIR__ . '/zh-shipping-statement.php';
         new \Zerohold\Shipping\RootShippingStatementPage();
 
-        // Initialize Wallet Transaction Manager (New)
-        new Core\WalletTransactionManager();
 
         // Initialize Dokan Statement Integration (Immutable Ledger)
         new Core\DokanStatementIntegration();

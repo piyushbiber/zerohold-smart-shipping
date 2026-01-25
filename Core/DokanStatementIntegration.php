@@ -9,8 +9,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Dokan Statement Integration Class
  * 
- * Hooks into Dokan Pro's Statement Report to inject wallet-based shipping transactions.
- * Replaces Dokan's volatile status-based order entries with immutable wallet ledger.
+ * Injects shipping charges from order meta into Dokan vendor statement.
  * 
  * @since 1.0.0
  */
@@ -18,19 +17,19 @@ class DokanStatementIntegration {
 
 	public function __construct() {
 		// Hook into Dokan Statement filter
-		add_filter( 'dokan_report_statement_entries', [ $this, 'inject_wallet_entries' ], 10, 3 );
+		add_filter( 'dokan_report_statement_entries', [ $this, 'inject_shipping_entries' ], 10, 3 );
 	}
 
 	/**
-	 * Inject wallet-based entries into Dokan Statement.
+	 * Inject shipping entries into Dokan Statement.
 	 * 
 	 * @param array  $entries Dokan's original statement entries
 	 * @param array  $args    Query arguments (vendor_id, start_date, end_date)
 	 * @param string $status  Order status filter
 	 * 
-	 * @return array Modified entries with wallet transactions injected
+	 * @return array Modified entries with shipping charges injected
 	 */
-	public function inject_wallet_entries( $entries, $args, $status ) {
+	public function inject_shipping_entries( $entries, $args, $status ) {
 		global $wpdb;
 
 		// Extract context from first entry or use current user
@@ -40,8 +39,7 @@ class DokanStatementIntegration {
 
 		error_log( "ZSS: Dokan Statement Hook Fired - Vendor: {$vendor_id}, Range: {$start_date} to {$end_date}" );
 
-		// STEP 1: Keep Dokan entries as-is for now (Phase 6 will replace order entries with wallet)
-		// For now, just ADD shipping entries alongside existing ones
+		// STEP 1: Keep Dokan entries as-is for now
 		$filtered_entries = $entries; // Use all entries
 
 		error_log( sprintf( 
@@ -49,29 +47,28 @@ class DokanStatementIntegration {
 			count( $filtered_entries ) 
 		) );
 
-		// STEP 2: Query wallet transactions for shipping
-		$wallet_entries = $this->query_wallet_transactions( $vendor_id, $start_date, $end_date );
+		// STEP 2: Query orders with shipping charges from meta
+		$shipping_orders = $this->query_shipping_orders( $vendor_id, $start_date, $end_date );
 
-		error_log( "ZSS: Found " . count($wallet_entries) . " wallet transactions" );
+		error_log( "ZSS: Found " . count($shipping_orders) . " shipping charges" );
 		
-		// Debug: Log the actual wallet entries
-		if ( ! empty( $wallet_entries ) ) {
-			foreach ( $wallet_entries as $idx => $entry ) {
+		// Debug: Log the shipping orders
+		if ( ! empty( $shipping_orders ) ) {
+			foreach ( $shipping_orders as $idx => $order ) {
 				error_log( sprintf(
-					"ZSS: Wallet Entry #%d - ID: %d, Type: %s, Amount: %s, Date: %s",
+					"ZSS: Shipping Entry #%d - Order: %d, Cost: %s, Date: %s",
 					$idx,
-					$entry->transaction_id,
-					$entry->type,
-					$entry->amount,
-					$entry->date
+					$order->order_id,
+					$order->shipping_cost,
+					$order->shipping_date
 				) );
 			}
 		} else {
-			error_log( "ZSS: No wallet entries found. Query params - Vendor: {$vendor_id}, Start: {$start_date}, End: {$end_date}" );
+			error_log( "ZSS: No shipping charges found. Query params - Vendor: {$vendor_id}, Start: {$start_date}, End: {$end_date}" );
 		}
 
-		// STEP 3: Transform wallet rows to Dokan format
-		$transformed_entries = $this->transform_wallet_to_dokan( $wallet_entries );
+		// STEP 3: Transform order data to Dokan format
+		$transformed_entries = $this->transform_orders_to_dokan( $shipping_orders, $vendor_id );
 
 		// STEP 4: Merge arrays
 		$merged_entries = array_merge( $filtered_entries, $transformed_entries );
@@ -85,7 +82,7 @@ class DokanStatementIntegration {
 		$final_entries = $this->recalculate_balance( $merged_entries );
 
 		error_log( sprintf( 
-			"ZSS: Final statement - Total entries: %d (Dokan: %d, Wallet: %d)", 
+			"ZSS: Final statement - Total entries: %d (Dokan: %d, Shipping: %d)", 
 			count( $final_entries ),
 			count( $filtered_entries ),
 			count( $transformed_entries )
@@ -108,8 +105,6 @@ class DokanStatementIntegration {
 	 * Extract start date from entries or use current month start.
 	 */
 	private function get_start_date( $entries ) {
-		// Try to get from Dokan's statement data
-		// Fallback to first day of current month
 		return dokan_current_datetime()->modify( 'first day of this month' )->format( 'Y-m-d' );
 	}
 
@@ -121,46 +116,35 @@ class DokanStatementIntegration {
 	}
 
 	/**
-	 * Filter out Dokan's volatile order entries (they disappear on status change).
+	 * Query orders with shipping charges from order meta.
 	 * 
-	 * Keep: withdrawals, gateway fees, refunds
-	 * Remove: dokan_orders (we'll replace with wallet-based entries)
+	 * @return array Array of shipping charge data from orders
 	 */
-	private function filter_volatile_entries( $entries ) {
-		return array_filter( $entries, function( $entry ) {
-			return $entry['trn_type'] !== 'dokan_orders';
-		});
-	}
-
-	/**
-	 * Query wallet transactions for shipping entries.
-	 * 
-	 * @return array Raw wallet transaction rows
-	 */
-	private function query_wallet_transactions( $vendor_id, $start_date, $end_date ) {
+	private function query_shipping_orders( $vendor_id, $start_date, $end_date ) {
 		global $wpdb;
 
-		$table_transactions = $wpdb->prefix . 'woo_wallet_transactions';
-		$table_meta         = $wpdb->prefix . 'woo_wallet_transaction_meta';
-
+		// Query orders that have shipping cost meta
 		$sql = "
-			SELECT t.*, m.meta_value as is_shipping 
-			FROM $table_transactions t
-			INNER JOIN $table_meta m ON t.transaction_id = m.transaction_id
-			WHERE t.user_id = %d
-			AND m.meta_key = 'zh_shipping'
-			AND m.meta_value = 'yes'
-			AND DATE(t.date) >= %s
-			AND DATE(t.date) <= %s
-			ORDER BY t.date ASC
+			SELECT 
+				p.ID as order_id,
+				pm1.meta_value as shipping_cost,
+				pm2.meta_value as shipping_date
+			FROM {$wpdb->posts} p
+			INNER JOIN {$wpdb->postmeta} pm1 ON p.ID = pm1.post_id AND pm1.meta_key = '_zh_shipping_cost'
+			INNER JOIN {$wpdb->postmeta} pm2 ON p.ID = pm2.post_id AND pm2.meta_key = '_zh_shipping_date'
+			INNER JOIN {$wpdb->postmeta} pm3 ON p.ID = pm3.post_id AND pm3.meta_key = '_dokan_vendor_id'
+			WHERE p.post_type = 'shop_order'
+			AND pm3.meta_value = %d
+			AND DATE(pm2.meta_value) >= %s
+			AND DATE(pm2.meta_value) <= %s
+			ORDER BY pm2.meta_value ASC
 		";
 
 		$prepared_sql = $wpdb->prepare( $sql, $vendor_id, $start_date, $end_date );
-		error_log( "ZSS: Executing wallet query: " . $prepared_sql );
+		error_log( "ZSS: Executing shipping meta query: " . $prepared_sql );
 
 		$results = $wpdb->get_results( $prepared_sql );
 		
-		error_log( "ZSS: Raw query result count: " . count( $results ) );
 		if ( $wpdb->last_error ) {
 			error_log( "ZSS: SQL Error: " . $wpdb->last_error );
 		}
@@ -169,74 +153,41 @@ class DokanStatementIntegration {
 	}
 
 	/**
-	 * Transform wallet transactions to Dokan entry format.
+	 * Transform order shipping data to Dokan entry format.
 	 * 
-	 * CRITICAL: Reverses wallet debit/credit to match Dokan's accounting semantics:
-	 * - Wallet 'debit' (vendor pays) → Dokan 'credit'
-	 * - Wallet 'credit' (vendor earns) → Dokan 'debit'
+	 * Shipping is a COST to vendor, so it goes in CREDIT column (vendor pays).
 	 */
-	private function transform_wallet_to_dokan( $wallet_rows ) {
+	private function transform_orders_to_dokan( $shipping_orders, $vendor_id ) {
 		$transformed = [];
 
-		foreach ( $wallet_rows as $row ) {
-			$meta = $this->get_transaction_meta( $row->transaction_id );
-			
-			// Reverse wallet debit/credit for Dokan semantics
-			if ( $row->type === 'debit' ) {
-				// Wallet debit = vendor PAYS shipping
-				// Dokan: vendor pays = CREDIT column
-				$debit  = 0;
-				$credit = (float) $row->amount;
-			} else {
-				// Wallet credit = vendor EARNS (shipping refund)
-				// Dokan: vendor earns = DEBIT column
-				$debit  = (float) $row->amount;
-				$credit = 0;
-			}
+		foreach ( $shipping_orders as $row ) {
+			$order_id = (int) $row->order_id;
+			$shipping_cost = (float) $row->shipping_cost;
+			$shipping_date = $row->shipping_date;
 
-			// Determine title
-			$trn_title = 'Shipping Charge';
-			if ( isset( $meta['transaction_type'] ) && $meta['transaction_type'] === 'shipping_refund' ) {
-				$trn_title = 'Shipping Refund';
-			}
+			// Shipping charge = vendor PAYS = CREDIT column (deducted from balance)
+			$debit  = 0;
+			$credit = $shipping_cost;
 
 			// Build Dokan entry
 			$transformed[] = [
-				'id'           => 'W-' . $row->transaction_id, // Prefix to avoid ID conflicts
-				'vendor_id'    => (int) $row->user_id,
-				'trn_id'       => (int) ( $meta['order_id'] ?? 0 ),
+				'id'           => 'ZH-SHIP-' . $order_id, // Unique ID
+				'vendor_id'    => $vendor_id,
+				'trn_id'       => $order_id,
 				'trn_type'     => 'zh_shipping',
-				'perticulars'  => $row->details,
+				'perticulars'  => sprintf( 'Shipping Charge for Order #%d', $order_id ),
 				'debit'        => $debit,
 				'credit'       => $credit,
 				'status'       => '',
-				'trn_date'     => $row->date,
-				'balance_date' => $row->date,
+				'trn_date'     => $shipping_date,
+				'balance_date' => $shipping_date,
 				'balance'      => 0, // Will be recalculated
-				'trn_title'    => $trn_title,
-				'url'          => $this->get_order_url( $meta['order_id'] ?? 0 ),
+				'trn_title'    => __( 'Shipping Charge', 'zerohold-shipping' ),
+				'url'          => $this->get_order_url( $order_id ),
 			];
 		}
 
 		return $transformed;
-	}
-
-	/**
-	 * Get transaction meta from wallet.
-	 */
-	private function get_transaction_meta( $transaction_id ) {
-		global $wpdb;
-		$table = $wpdb->prefix . 'woo_wallet_transaction_meta';
-		$results = $wpdb->get_results( $wpdb->prepare( 
-			"SELECT meta_key, meta_value FROM $table WHERE transaction_id = %d", 
-			$transaction_id 
-		) );
-		
-		$meta = [];
-		foreach ( $results as $r ) {
-			$meta[ $r->meta_key ] = $r->meta_value;
-		}
-		return $meta;
 	}
 
 	/**
