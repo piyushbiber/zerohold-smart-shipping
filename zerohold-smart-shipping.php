@@ -85,6 +85,9 @@ class ZeroHoldSmartShipping {
         // Initialize Wallet Transaction Manager (New)
         new Core\WalletTransactionManager();
 
+        // Initialize Dokan Statement Integration (Immutable Ledger)
+        new Core\DokanStatementIntegration();
+
 		// Initialize Return Shipping MVP
 		new Admin\ReturnAdminUI();
 		new Core\ReturnManager();
