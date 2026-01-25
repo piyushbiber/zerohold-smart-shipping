@@ -79,10 +79,6 @@ class ZeroHoldSmartShipping {
 		new Vendor\VendorUI();
 
         // Initialize Shipping Statement Page (New)
-        // require_once __DIR__ . '/Vendor/ShippingStatementPage.php';
-        // new \ZH_Shipping_Statement_Unique();
-
-        // ROOT FILE TEST
         require_once __DIR__ . '/zh-shipping-statement.php';
         new \Zerohold\Shipping\RootShippingStatementPage();
 
