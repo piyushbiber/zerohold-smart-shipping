@@ -12,6 +12,31 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class WalletTransactionManager {
 
+	public function __construct() {
+		// Hook to add meta after TeraWallet creates a transaction
+		add_action( 'woo_wallet_transaction_recorded', [ $this, 'add_shipping_meta' ], 10, 3 );
+	}
+
+	/**
+	 * Add shipping meta to wallet transaction after it's created.
+	 */
+	public function add_shipping_meta( $transaction_id, $user_id, $transaction_data ) {
+		// Only process if this is our shipping transaction
+		if ( isset( $transaction_data['details'] ) && strpos( $transaction_data['details'], 'Shipping Charge for Order' ) !== false ) {
+			// Extract order ID from details
+			preg_match( '/#(\d+)/', $transaction_data['details'], $matches );
+			$order_id = isset( $matches[1] ) ? $matches[1] : 0;
+
+			// Add meta using TeraWallet's functions
+			woo_wallet()->wallet->update_transaction_meta( $transaction_id, 'zh_shipping', 'yes' );
+			woo_wallet()->wallet->update_transaction_meta( $transaction_id, 'transaction_type', 'shipping' );
+			woo_wallet()->wallet->update_transaction_meta( $transaction_id, 'order_id', $order_id );
+			woo_wallet()->wallet->update_transaction_meta( $transaction_id, 'currency', get_woocommerce_currency() );
+
+			error_log( "ZSS WALLET: Added meta to transaction #{$transaction_id} for order #{$order_id}" );
+		}
+	}
+
 	/**
 	 * Debit shipping charge from vendor wallet.
 	 *
@@ -34,26 +59,20 @@ class WalletTransactionManager {
 		}
 
 		$transaction_data = [
-			'blog_id'      => get_current_blog_id(),
-			'user_id'      => $vendor_id,
-			'amount'       => $amount,
-			'type'         => 'debit',
-			'details'      => sprintf( __( 'Shipping Charge for Order #%s', 'zerohold-shipping' ), $order_id ),
-			'users_mapped' => [],
-			'meta'         => [
-				'zh_shipping'      => 'yes',
-				'transaction_type' => 'shipping',
-				'order_id'         => $order_id,
-				'currency'         => get_woocommerce_currency(),
-			]
+			'user_id'  => $vendor_id,
+			'amount'   => $amount,
+			'type'     => 'debit',
+			'details'  => sprintf( __( 'Shipping Charge for Order #%s', 'zerohold-shipping' ), $order_id ),
 		];
 
 		error_log( "ZSS WALLET: Transaction data prepared: " . print_r( $transaction_data, true ) );
 
 		// Try direct object method first (Primary TeraWallet API)
 		if ( function_exists( 'woo_wallet' ) && isset( woo_wallet()->wallet ) ) {
-			$transaction_id = woo_wallet()->wallet->debit( $transaction_data );
+			$transaction_id = woo_wallet()->wallet->debit( $vendor_id, $amount, $transaction_data['details'] );
 			error_log( "ZSS WALLET: Debit result (Transaction ID): " . print_r( $transaction_id, true ) );
+			
+			// Meta will be added via the hook 'woo_wallet_transaction_recorded'
 			return $transaction_id;
 		}
 		
