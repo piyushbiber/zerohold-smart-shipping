@@ -134,42 +134,30 @@ class DokanStatementIntegration {
 		$check = $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key = '_zh_shipping_cost'" );
 		error_log( "ZSS DEBUG: Global count of _zh_shipping_cost in postmeta: " . $check );
 		
-		if ( $check > 0 ) {
-			// Find one example post_id to see what's going on
-			$example_id = $wpdb->get_var( "SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_zh_shipping_cost' LIMIT 1" );
-			error_log( "ZSS DEBUG: Example Order ID with shipping cost: " . $example_id );
-			
-			// Check vendor ID for this specific example
-			$example_vendor = get_post_meta( $example_id, '_dokan_vendor_id', true );
-			error_log( "ZSS DEBUG: Vendor ID for example order #{$example_id} is: '{$example_vendor}' (Expected: {$vendor_id})" );
-		}
-
 		// Query orders that have shipping cost meta
-		// Note: We use a more permissive query to handle potential HPOS or custom post types
+		// We join with postmeta for cost and date, and filter vendor by post_author OR meta
 		$sql = "
-			SELECT 
-				p.ID as order_id,
+			SELECT DISTINCT
+				pm1.post_id as order_id,
 				pm1.meta_value as shipping_cost,
 				pm2.meta_value as shipping_date
 			FROM {$wpdb->postmeta} pm1
-			INNER JOIN {$wpdb->posts} p ON p.ID = pm1.post_id
-			INNER JOIN {$wpdb->postmeta} pm2 ON p.ID = pm2.post_id AND pm2.meta_key = '_zh_shipping_date'
-			INNER JOIN {$wpdb->postmeta} pm3 ON p.ID = pm3.post_id AND pm3.meta_key = '_dokan_vendor_id'
+			INNER JOIN {$wpdb->postmeta} pm2 ON pm1.post_id = pm2.post_id AND pm2.meta_key = '_zh_shipping_date'
+			INNER JOIN {$wpdb->posts} p ON pm1.post_id = p.ID
+			LEFT JOIN {$wpdb->postmeta} pm3 ON pm1.post_id = pm3.post_id AND pm3.meta_key = '_dokan_vendor_id'
 			WHERE pm1.meta_key = '_zh_shipping_cost'
-			AND pm3.meta_value = %d
+			AND ( pm3.meta_value = %d OR p.post_author = %d )
 			AND DATE(pm2.meta_value) >= %s
 			AND DATE(pm2.meta_value) <= %s
 			ORDER BY pm2.meta_value ASC
 		";
 
-		$prepared_sql = $wpdb->prepare( $sql, $vendor_id, $start_date, $end_date );
-		error_log( "ZSS: Executing shipping meta query: " . $prepared_sql );
+		$prepared_sql = $wpdb->prepare( $sql, $vendor_id, $vendor_id, $start_date, $end_date );
+		error_log( "ZSS: Executing robust shipping query: " . $prepared_sql );
 
 		$results = $wpdb->get_results( $prepared_sql );
 		
-		if ( $wpdb->last_error ) {
-			error_log( "ZSS: SQL Error: " . $wpdb->last_error );
-		}
+		error_log( "ZSS: Robust query found " . count( $results ) . " shipping charges" );
 
 		return $results;
 	}
