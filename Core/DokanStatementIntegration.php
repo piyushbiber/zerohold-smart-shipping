@@ -130,10 +130,15 @@ class DokanStatementIntegration {
 		}
 		error_log( "ZSS DEBUG: HPOS Active: " . ($hpos_active ? 'Yes' : 'No') );
 
-		// Debug query: Check if ANY _zh_shipping_cost entries exist at all
-		$check = $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key = '_zh_shipping_cost'" );
-		error_log( "ZSS DEBUG: Global count of _zh_shipping_cost in postmeta: " . $check );
-		
+		// DIAGNOSTIC: Look at the 5 rows found in postmeta
+		$raw_rows = $wpdb->get_results( "SELECT post_id, meta_value FROM {$wpdb->postmeta} WHERE meta_key = '_zh_shipping_cost' LIMIT 5" );
+		foreach ( $raw_rows as $row ) {
+			$v_id = get_post_meta( $row->post_id, '_dokan_vendor_id', true );
+			$author = $wpdb->get_var( $wpdb->prepare( "SELECT post_author FROM {$wpdb->posts} WHERE ID = %d", $row->post_id ) );
+			$date = get_post_meta( $row->post_id, '_zh_shipping_date', true );
+			error_log( "ZSS DIAGNOSTIC: Order #{$row->post_id} | Cost: {$row->meta_value} | Date: {$date} | Meta Vendor: '{$v_id}' | Post Author: '{$author}'" );
+		}
+
 		// Query orders that have shipping cost meta
 		// We join with postmeta for cost and date, and filter vendor by post_author OR meta
 		$sql = "
@@ -143,8 +148,8 @@ class DokanStatementIntegration {
 				pm2.meta_value as shipping_date
 			FROM {$wpdb->postmeta} pm1
 			INNER JOIN {$wpdb->postmeta} pm2 ON pm1.post_id = pm2.post_id AND pm2.meta_key = '_zh_shipping_date'
-			INNER JOIN {$wpdb->posts} p ON pm1.post_id = p.ID
 			LEFT JOIN {$wpdb->postmeta} pm3 ON pm1.post_id = pm3.post_id AND pm3.meta_key = '_dokan_vendor_id'
+			LEFT JOIN {$wpdb->posts} p ON pm1.post_id = p.ID
 			WHERE pm1.meta_key = '_zh_shipping_cost'
 			AND ( pm3.meta_value = %d OR p.post_author = %d )
 			AND DATE(pm2.meta_value) >= %s
