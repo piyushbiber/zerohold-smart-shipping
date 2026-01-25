@@ -52,7 +52,23 @@ class DokanStatementIntegration {
 		// STEP 2: Query wallet transactions for shipping
 		$wallet_entries = $this->query_wallet_transactions( $vendor_id, $start_date, $end_date );
 
-		error_log( "ZSS: Found {count($wallet_entries)} wallet transactions" );
+		error_log( "ZSS: Found " . count($wallet_entries) . " wallet transactions" );
+		
+		// Debug: Log the actual wallet entries
+		if ( ! empty( $wallet_entries ) ) {
+			foreach ( $wallet_entries as $idx => $entry ) {
+				error_log( sprintf(
+					"ZSS: Wallet Entry #%d - ID: %d, Type: %s, Amount: %s, Date: %s",
+					$idx,
+					$entry->transaction_id,
+					$entry->type,
+					$entry->amount,
+					$entry->date
+				) );
+			}
+		} else {
+			error_log( "ZSS: No wallet entries found. Query params - Vendor: {$vendor_id}, Start: {$start_date}, End: {$end_date}" );
+		}
 
 		// STEP 3: Transform wallet rows to Dokan format
 		$transformed_entries = $this->transform_wallet_to_dokan( $wallet_entries );
