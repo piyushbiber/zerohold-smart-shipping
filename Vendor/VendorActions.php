@@ -168,8 +168,8 @@ class VendorActions {
 		$mapper   = new OrderMapper();
 		$shipment = $mapper->map( $order );
 
-		error_log( "ZSS DEBUG: Starting Label Generation for Order #{$order_id}" );
-		error_log( "ZSS DEBUG: Shipment Data: " . print_r( $shipment, true ) );
+		// error_log( "ZSS DEBUG: Starting Label Generation for Order #{$order_id}" );
+		// error_log( "ZSS DEBUG: Shipment Data: " . print_r( $shipment, true ) );
 
 		// Step 2.6.6: Auto-Refresh Warehouse if needed
 		\Zerohold\Shipping\Core\WarehouseManager::checkAndRefresh( $shipment );
@@ -190,7 +190,7 @@ class VendorActions {
 			// Optional: Pre-filtering based on balance (if quotes exist)
 			if ( ! empty( $quotes[ $key ] ) ) {
 				$balance = $adapter->getWalletBalance();
-				error_log( "ZSS BALANCE: Platform {$key} has balance of {$balance}" );
+				// error_log( "ZSS BALANCE: Platform {$key} has balance of {$balance}" );
 				
 				// Find cheapest for this platform
 				$local_best = 999999;
@@ -200,7 +200,7 @@ class VendorActions {
 				}
 
 				if ( $balance < $local_best ) {
-					error_log( "ZSS BALANCE: Proactively excluding platform {$key} due to low balance ({$balance} < {$local_best})" );
+					// error_log( "ZSS BALANCE: Proactively excluding platform {$key} due to low balance ({$balance} < {$local_best})" );
 					$excluded_platforms[] = $key;
 				}
 			}
@@ -228,7 +228,7 @@ class VendorActions {
 				return;
 			}
 
-			error_log( "ZSS DEBUG: Winner Selected: " . print_r( $winner, true ) );
+			// error_log( "ZSS DEBUG: Winner Selected: " . print_r( $winner, true ) );
 			$selected_winner = $winner;
 			$winner_platform = $winner->platform;
 			$adapter = $platforms[ $winner_platform ] ?? reset( $platforms );
@@ -240,9 +240,9 @@ class VendorActions {
 			$shipment->courier_id  = $winner->courier_id ?? '';
 
 			// 4. Create Order (Book)
-			error_log( "ZSS DEBUG: Attempting createOrder via " . ucfirst($winner_platform) );
+			// error_log( "ZSS DEBUG: Attempting createOrder via " . ucfirst($winner_platform) );
 			$response = $adapter->createOrder( $shipment );
-			error_log( "ZSS DEBUG: createOrder Response: " . print_r( $response, true ) );
+			// error_log( "ZSS DEBUG: createOrder Response: " . print_r( $response, true ) );
 
 			// 5. Balance Check Fallback
 			if ( $adapter->isBalanceError( $response ) ) {
@@ -295,9 +295,9 @@ class VendorActions {
 				}
 			}
 
-			error_log( "ZSS DEBUG: Generating AWB..." );
+			// error_log( "ZSS DEBUG: Generating AWB..." );
 			$awb_response = $adapter->generateAWB( $response['shipment_id'] );
-			error_log( "ZSS DEBUG: AWB Response: " . print_r( $awb_response, true ) );
+			// error_log( "ZSS DEBUG: AWB Response: " . print_r( $awb_response, true ) );
 
 			// Check status - standardized or platform specific?
 			// Shiprocket uses 'awb_assign_status' == 1.
@@ -323,9 +323,9 @@ class VendorActions {
 			}
 
 			if ( $success ) {
-				error_log( "ZSS DEBUG: Fetching Label..." );
+				// error_log( "ZSS DEBUG: Fetching Label..." );
 				$label_response = $adapter->getLabel( $response['shipment_id'] );
-				error_log( "ZSS DEBUG: Label Response: " . print_r( $label_response, true ) );
+				// error_log( "ZSS DEBUG: Label Response: " . print_r( $label_response, true ) );
 
 				if ( isset( $label_response['label_url'] ) ) {
 					// Extract AWB Code (Platform specific or normalized?)

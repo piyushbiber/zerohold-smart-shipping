@@ -177,9 +177,9 @@ class BigShipAdapter implements PlatformInterface {
             ]
         ];
 		
-		error_log( "ZSS DEBUG: BigShip Draft Payload: " . print_r( $payload, true ) );
-		$response = $this->client->post( 'order/add/single', $payload );
-		error_log( "ZSS DEBUG: BigShip Draft Response: " . print_r( $response, true ) );
+		// error_log( "ZSS DEBUG: BigShip Draft Payload: " . print_r( $payload, true ) );
+		$response = $this->client->post( 'createDraftOrder', $payload );
+		// error_log( "ZSS DEBUG: BigShip Draft Response: " . print_r( $response, true ) );
 
 		if ( is_wp_error( $response ) ) {
 			return $response;
@@ -236,7 +236,7 @@ class BigShipAdapter implements PlatformInterface {
 
 		$response = $this->client->get( 'order/shipping/rates', $query );
 
-		error_log( "ZSS DEBUG: BigShip Rates Response: " . print_r( $response, true ) );
+		// error_log( "ZSS DEBUG: BigShip Rates Response: " . print_r( $response, true ) );
 
 		if ( is_wp_error( $response ) || empty( $response['data'] ) ) {
 			return [];
@@ -302,9 +302,9 @@ class BigShipAdapter implements PlatformInterface {
 		];
 		
 		
-		error_log( "ZSS DEBUG: BigShip Manifest Payload: " . print_r( $payload, true ) );
-		$response = $this->client->post( 'order/manifest/single', $payload );
-		error_log( "ZSS DEBUG: BigShip Manifest Response: " . print_r( $response, true ) );
+		// error_log( "ZSS DEBUG: BigShip Manifest Payload: " . print_r( $payload, true ) );
+		$response = $this->client->post( 'manifestShipment', $payload );
+		// error_log( "ZSS DEBUG: BigShip Manifest Response: " . print_r( $response, true ) );
 		
 		
 		if ( isset( $response['success'] ) && $response['success'] === true ) {
@@ -324,9 +324,9 @@ class BigShipAdapter implements PlatformInterface {
 			'system_order_id'  => $shipment_id
 		];
 		
-		error_log( "ZSS DEBUG: BigShip AWB Params (sh_id=1): " . print_r( $params, true ) );
-		$response = $this->client->post( 'shipment/data', [], $params );
-		error_log( "ZSS DEBUG: BigShip AWB Response: " . print_r( $response, true ) );
+		// error_log( "ZSS DEBUG: BigShip AWB Params (sh_id=1): " . print_r( $params, true ) );
+		$response = $this->client->post( 'getShippingLabelAndInvoice', $params );
+		// error_log( "ZSS DEBUG: BigShip AWB Response: " . print_r( $response, true ) );
         
         
         if ( ! empty( $response['data']['master_awb'] ) ) {
@@ -353,9 +353,9 @@ class BigShipAdapter implements PlatformInterface {
 			'system_order_id'  => $shipment_id
 		];
 		
-		error_log( "ZSS DEBUG: BigShip Label Params (sh_id=2): " . print_r( $params, true ) );
-		$response = $this->client->post( 'shipment/data', [], $params );
-		error_log( "ZSS DEBUG: BigShip Label Response Base64 Length: " . ( isset( $response['data']['res_FileContent'] ) ? strlen( $response['data']['res_FileContent'] ) : 'N/A' ) );
+		// error_log( "ZSS DEBUG: BigShip Label Params (sh_id=2): " . print_r( $params, true ) );
+		$response = $this->client->post( 'getShippingLabelAndInvoice', $params );
+		// error_log( "ZSS DEBUG: BigShip Label Response Base64 Length: " . ( isset( $response['data']['res_FileContent'] ) ? strlen( $response['data']['res_FileContent'] ) : 'N/A' ) );
         
         
         if ( isset( $response['data']['res_FileContent'] ) ) {
@@ -622,7 +622,7 @@ class BigShipAdapter implements PlatformInterface {
 		// Endpoint provided by user: api/Wallet/balance/get
 		$response = $this->client->get( 'Wallet/balance/get' );
 
-		error_log( "ZSS DEBUG: BigShip Wallet Response: " . print_r( $response, true ) );
+		// error_log( "ZSS DEBUG: BigShip Wallet Response: " . print_r( $response, true ) );
 
 		if ( is_wp_error( $response ) || empty( $response['success'] ) ) {
 			return 0;
