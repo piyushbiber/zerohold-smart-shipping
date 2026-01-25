@@ -79,7 +79,8 @@ class ZeroHoldSmartShipping {
 		new Vendor\VendorUI();
 
         // Initialize Shipping Statement Page (New)
-        // new Vendor\ShippingStatementPage();
+        require_once __DIR__ . '/Vendor/ShippingStatementPage.php';
+        new Vendor\ShippingStatementPage();
 
         // Initialize Wallet Transaction Manager (New)
         new Core\WalletTransactionManager();
