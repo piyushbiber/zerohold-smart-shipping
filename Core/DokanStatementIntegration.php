@@ -40,12 +40,12 @@ class DokanStatementIntegration {
 
 		error_log( "ZSS: Dokan Statement Hook Fired - Vendor: {$vendor_id}, Range: {$start_date} to {$end_date}" );
 
-		// STEP 1: Filter out Dokan's volatile order entries
-		$filtered_entries = $this->filter_volatile_entries( $entries );
+		// STEP 1: Keep Dokan entries as-is for now (Phase 6 will replace order entries with wallet)
+		// For now, just ADD shipping entries alongside existing ones
+		$filtered_entries = $entries; // Use all entries
 
 		error_log( sprintf( 
-			"ZSS: Filtered Dokan entries - Original: %d, After filter: %d", 
-			count( $entries ), 
+			"ZSS: Processing Dokan entries - Total: %d", 
 			count( $filtered_entries ) 
 		) );
 
