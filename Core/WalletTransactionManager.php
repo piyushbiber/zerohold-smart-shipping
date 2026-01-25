@@ -21,12 +21,15 @@ class WalletTransactionManager {
 	 * @return int|bool Transaction ID on success, false on failure.
 	 */
 	public static function debit_shipping_charge( $order_id, $amount, $vendor_id ) {
+		error_log( "ZSS WALLET: Attempting to debit ₹{$amount} from vendor #{$vendor_id} for order #{$order_id}" );
+
 		if ( ! function_exists( 'woo_wallet' ) && ! has_action( 'woo_wallet_debit_balance' ) ) {
-			error_log( 'ZSS Error: TeraWallet not active. Cannot debit shipping charge.' );
+			error_log( 'ZSS WALLET ERROR: TeraWallet not active. Cannot debit shipping charge.' );
 			return false;
 		}
 
 		if ( $amount <= 0 ) {
+			error_log( "ZSS WALLET ERROR: Invalid amount: {$amount}" );
 			return false;
 		}
 
@@ -45,13 +48,17 @@ class WalletTransactionManager {
 			]
 		];
 
+		error_log( "ZSS WALLET: Transaction data prepared: " . print_r( $transaction_data, true ) );
+
 		// Try direct object method first (Primary TeraWallet API)
 		if ( function_exists( 'woo_wallet' ) && isset( woo_wallet()->wallet ) ) {
-			return woo_wallet()->wallet->debit( $transaction_data );
+			$transaction_id = woo_wallet()->wallet->debit( $transaction_data );
+			error_log( "ZSS WALLET: Debit result (Transaction ID): " . print_r( $transaction_id, true ) );
+			return $transaction_id;
 		}
 		
 		// Fallback to action hook (Standard Hook API)
-		// Note: The hook doesn't return ID, so we just fire it.
+		error_log( "ZSS WALLET: Using fallback hook method" );
 		do_action( 'woo_wallet_debit_balance', $transaction_data );
 		return true;
 	}
