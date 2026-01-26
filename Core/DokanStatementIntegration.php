@@ -258,6 +258,8 @@ class DokanStatementIntegration {
 		}
 
 		return $entries;
+	}
+
 	/**
 	 * Sync top summary cards (Total Debit, Total Credit, Balance) with shipping charges.
 	 * 
