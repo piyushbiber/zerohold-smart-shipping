@@ -96,8 +96,8 @@ class DokanStatementIntegration {
 		}
 		unset( $dokan_entry ); // Break reference
 		
-		// STEP 3: Handle REFUNDS (Fix for Missing Deductions)
-		// Query fully refunded orders (Status: wc-refunded) that aren't already in the statement
+		// STEP 3: Handle REFUNDS (Rejection Penalty Logic)
+		// When vendor rejects order: Deduct order amount + 25% penalty = 125% total
 		$refunded_orders = $this->query_refunded_orders( $vendor_id, $start_date, $end_date );
 		$new_refund_entries = [];
 
@@ -107,24 +107,34 @@ class DokanStatementIntegration {
 					continue; // Already exists in statement
 				}
 
+				// Calculate 125% deduction (100% refund + 25% penalty)
+				$order_amount = (float) $refund->order_total;
+				$penalty_amount = $order_amount * 0.25; // 25% penalty
+				$total_deduction = $order_amount + $penalty_amount; // 125%
+
 				// Transform to Dokan Entry
 				$new_refund_entries[] = [
 					'id'           => 'ZH-REF-' . $refund->order_id,
 					'vendor_id'    => $vendor_id,
 					'trn_id'       => $refund->order_id,
-					'trn_type'     => 'dokan_refund', // Standard type
-					'perticulars'  => sprintf( __( 'Refund for Order #%d', 'zerohold-shipping' ), $refund->order_id ),
+					'trn_type'     => 'dokan_refund',
+					'perticulars'  => sprintf( 
+						__( 'Order Return + Penalty for Order #%d (₹%s order + ₹%s penalty)', 'zerohold-shipping' ), 
+						$refund->order_id,
+						number_format( $order_amount, 2 ),
+						number_format( $penalty_amount, 2 )
+					),
 					'debit'        => 0,
-					'credit'       => (float) $refund->order_total, // Deduct from balance
+					'credit'       => $total_deduction, // Deduct 125%
 					'status'       => 'approved',
 					'trn_date'     => $refund->refund_date,
 					'balance_date' => $refund->refund_date,
 					'balance'      => 0, // Recalculated later
-					'trn_title'    => __( 'Order Refund', 'zerohold-shipping' ),
+					'trn_title'    => __( 'Order Return + Penalty', 'zerohold-shipping' ),
 					'url'          => $this->get_order_url( $refund->order_id ),
 				];
 				
-				error_log( "ZSS: Injected missing refund for Order #{$refund->order_id} (-{$refund->order_total})" );
+				error_log( "ZSS: Injected rejection penalty for Order #{$refund->order_id} (-₹{$total_deduction}: ₹{$order_amount} + ₹{$penalty_amount} penalty)" );
 			}
 		}
 
