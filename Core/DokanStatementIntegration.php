@@ -126,24 +126,40 @@ class DokanStatementIntegration {
 	private function query_shipping_orders( $vendor_id, $start_date, $end_date ) {
 		global $wpdb;
 
-		error_log( "ZSS: Starting statement query for Vendor #{$vendor_id} ($start_date to $end_date)" );
+		error_log( "ZSS: Starting robust statement query for Vendor #{$vendor_id}" );
 
-		// 1. Get ALL orders that have a shipping cost recorded within the date range
-		// We query postmeta directly for the cost and date.
-		$sql = "
+		// 1. Fetch Forward Shipping Charges
+		$sql_forward = "
 			SELECT 
 				pm1.post_id as order_id,
 				pm1.meta_value as shipping_cost,
-				pm2.meta_value as shipping_date
+				pm2.meta_value as shipping_date,
+				'forward' as shipping_type
 			FROM {$wpdb->postmeta} pm1
 			INNER JOIN {$wpdb->postmeta} pm2 ON pm1.post_id = pm2.post_id AND pm2.meta_key = '_zh_shipping_date'
 			WHERE pm1.meta_key = '_zh_shipping_cost'
 			AND DATE(pm2.meta_value) >= %s
 			AND DATE(pm2.meta_value) <= %s
-			ORDER BY pm2.meta_value ASC
 		";
 
-		$all_shipping_entries = $wpdb->get_results( $wpdb->prepare( $sql, $start_date, $end_date ) );
+		// 2. Fetch Return Shipping Charges
+		$sql_return = "
+			SELECT 
+				pm1.post_id as order_id,
+				pm1.meta_value as shipping_cost,
+				pm2.meta_value as shipping_date,
+				'return' as shipping_type
+			FROM {$wpdb->postmeta} pm1
+			INNER JOIN {$wpdb->postmeta} pm2 ON pm1.post_id = pm2.post_id AND pm2.meta_key = '_zh_return_shipping_date'
+			WHERE pm1.meta_key = '_zh_return_shipping_cost'
+			AND DATE(pm2.meta_value) >= %s
+			AND DATE(pm2.meta_value) <= %s
+		";
+
+		// Combine with UNION
+		$sql = "($sql_forward) UNION ($sql_return) ORDER BY shipping_date ASC";
+		
+		$all_shipping_entries = $wpdb->get_results( $wpdb->prepare( $sql, $start_date, $end_date, $start_date, $end_date ) );
 		
 		if ( empty( $all_shipping_entries ) ) {
 			error_log( "ZSS: No shipping cost meta found in database for these dates." );
@@ -152,27 +168,17 @@ class DokanStatementIntegration {
 
 		error_log( "ZSS: Found " . count( $all_shipping_entries ) . " total shipping entries in DB for this date range. Filtering by vendor..." );
 
-		// 2. Filter by Vendor in PHP using Dokan's native logic
-		// This is 100% reliable even with HPOS or custom vendor logic
+		// Filter by Vendor in PHP
 		$filtered_results = [];
 		foreach ( $all_shipping_entries as $entry ) {
 			$order_id = (int) $entry->order_id;
-			
-			// Detect seller using Dokan logic
-			$order_vendor_id = 0;
-			if ( function_exists( 'dokan_get_seller_id_by_order' ) ) {
-				$order_vendor_id = (int) dokan_get_seller_id_by_order( $order_id );
-			} else {
-				$order_vendor_id = (int) get_post_meta( $order_id, '_dokan_vendor_id', true );
-			}
+			$order_vendor_id = function_exists( 'dokan_get_seller_id_by_order' ) ? (int) dokan_get_seller_id_by_order( $order_id ) : (int) get_post_meta( $order_id, '_dokan_vendor_id', true );
 
-			// Special case: if we are viewing as admin (vendor_id = 0), we might show nothing or everything.
-			// But usually Dokan passes a specific vendor ID here.
 			if ( $order_vendor_id === (int) $vendor_id ) {
 				$filtered_results[] = $entry;
-				error_log( "ZSS: Match! Order #{$order_id} belongs to Vendor #{$vendor_id}" );
+				error_log( "ZSS: Match! Order #{$order_id} ({$entry->shipping_type}) belongs to Vendor #{$vendor_id}" );
 			} else {
-				error_log( "ZSS: Skipping! Order #{$order_id} belongs to Vendor #{$order_vendor_id}" );
+				error_log( "ZSS: Skipping! Order #{$order_id} ({$entry->shipping_type}) belongs to Vendor #{$order_vendor_id}" );
 			}
 		}
 
@@ -193,6 +199,11 @@ class DokanStatementIntegration {
 			$order_id = (int) $row->order_id;
 			$shipping_cost = (float) $row->shipping_cost;
 			$shipping_date = $row->shipping_date;
+			$is_return = ( $row->shipping_type === 'return' );
+
+			// Title and Description
+			$title = $is_return ? __( 'Return Shipping', 'zerohold-shipping' ) : __( 'Forward Shipping', 'zerohold-shipping' );
+			$desc  = $is_return ? sprintf( 'Return Shipping for Order #%d', $order_id ) : sprintf( 'Forward Shipping for Order #%d', $order_id );
 
 			// Shipping charge = vendor PAYS = CREDIT column (deducted from balance)
 			$debit  = 0;
@@ -200,18 +211,18 @@ class DokanStatementIntegration {
 
 			// Build Dokan entry
 			$transformed[] = [
-				'id'           => 'ZH-SHIP-' . $order_id, // Unique ID
+				'id'           => ($is_return ? 'ZH-RET-' : 'ZH-SHIP-') . $order_id, // Unique ID
 				'vendor_id'    => $vendor_id,
 				'trn_id'       => $order_id,
 				'trn_type'     => 'zh_shipping',
-				'perticulars'  => sprintf( 'Forward Shipping for Order #%d', $order_id ),
+				'perticulars'  => $desc,
 				'debit'        => $debit,
 				'credit'       => $credit,
 				'status'       => '',
 				'trn_date'     => $shipping_date,
 				'balance_date' => $shipping_date,
 				'balance'      => 0, // Will be recalculated
-				'trn_title'    => __( 'Forward Shipping', 'zerohold-shipping' ),
+				'trn_title'    => $title,
 				'url'          => $this->get_order_url( $order_id ),
 			];
 		}

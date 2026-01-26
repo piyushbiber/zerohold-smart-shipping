@@ -348,11 +348,12 @@ class VendorActions {
 					}
 
 					if ( $vendor_id ) {
-						// Store shipping cost in order meta for Dokan Statement display
-						$cost = isset( $winner->base ) ? $winner->base : 0;
-						update_post_meta( $order_id, '_zh_shipping_cost', $cost );
+						// Store shipping cost in order meta for Dokan Statement display (50% share)
+						$total_cost = isset( $winner->base ) ? $winner->base : 0;
+						$vendor_share = $total_cost / 2;
+						update_post_meta( $order_id, '_zh_shipping_cost', $vendor_share );
 						update_post_meta( $order_id, '_zh_shipping_date', current_time( 'mysql' ) );
-						error_log( "ZSS: Stored shipping cost ₹{$cost} in order meta for Order #{$order_id}" );
+						error_log( "ZSS: Stored forward shipping cost ₹{$vendor_share} (50%% of ₹{$total_cost}) in order meta for Order #{$order_id}" );
 					}
 
                     // BigShip Specific Storage

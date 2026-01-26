@@ -210,6 +210,13 @@ class ReturnManager {
 				update_post_meta( $order_id, '_zh_return_label_url', $label_res['label_url'] );
 			}
 
+			// Store return shipping cost in order meta for Dokan Statement (50% share)
+			$total_cost = isset( $winner->base ) ? $winner->base : 0;
+			$vendor_share = $total_cost / 2;
+			update_post_meta( $order_id, '_zh_return_shipping_cost', $vendor_share );
+			update_post_meta( $order_id, '_zh_return_shipping_date', current_time( 'mysql' ) );
+			error_log( "ZSS: Stored return shipping cost ₹{$vendor_share} (50%% of ₹{$total_cost}) in order meta for Order #{$order_id}" );
+
 			// Track Event: In Transit
 			\Zerohold\Shipping\Core\DokanShipmentSync::add_return_update( 
 				$order_id, 
