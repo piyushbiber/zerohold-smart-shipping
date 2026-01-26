@@ -721,7 +721,7 @@ class VendorActions {
 		$zone_breakdown = [];
 		$all_prices = [];
 
-		foreach ( $hubs as $zone_key => $pin ) {
+		foreach ( $zone_pins as $zone_key => $pin ) {
 			$zone_rates = $rates[ $zone_key ] ?? [];
 			$min = 999999;
 			$max = 0;
