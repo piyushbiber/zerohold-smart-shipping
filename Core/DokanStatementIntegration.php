@@ -28,12 +28,8 @@ class DokanStatementIntegration {
 		// Hook into Global Earnings filter to ensure dashboard math consistency
 		add_filter( 'dokan_get_seller_earnings', [ $this, 'deduct_shipping_from_global_balance' ], 10, 2 );
 
-		// Hook into Dokan Pro Revenue Report filters
-		add_filter( 'dokan_admin_report_data', [ $this, 'sync_revenue_summary_card' ], 10, 1 );
-		add_filter( 'dokan_admin_report_chart_data', [ $this, 'sync_revenue_chart_and_table' ], 10, 1 );
-
-		// Global REST Logger for Analytics debugging
-		add_filter( 'rest_pre_serve_request', [ $this, 'log_analytics_rest_response' ], 10, 4 );
+		// Hook into WooCommerce Analytics Revenue Report (Modern Dashboard)
+		add_filter( 'woocommerce_rest_prepare_report_revenue_stats', [ $this, 'inject_shipping_into_analytics' ], 10, 3 );
 	}
 
 	/**
