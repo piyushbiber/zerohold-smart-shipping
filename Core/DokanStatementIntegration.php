@@ -106,31 +106,43 @@ class DokanStatementIntegration {
 				$penalty_amount = (float) $penalty->penalty_amount;
 				$total_deduction = (float) $penalty->total_deduction;
 				$penalty_date = $penalty->penalty_date;
-				$order_amount = $total_deduction - $penalty_amount; // Reverse calculate
+				$order_amount = $total_deduction - $penalty_amount; // The 100% amount
 
-				// Build Dokan entry
+				// ROW A: Order Reversal (-100%)
 				$penalty_entries[] = [
-					'id'           => 'ZH-PENALTY-' . $order_id,
+					'id'           => 'ZH-REV-' . $order_id,
 					'vendor_id'    => $vendor_id,
 					'trn_id'       => $order_id,
-					'trn_type'     => 'zh_rejection_penalty',
-					'perticulars'  => sprintf( 
-						__( 'Order Return + Penalty for Order #%d (₹%s order + ₹%s penalty)', 'zerohold-shipping' ), 
-						$order_id,
-						number_format( $order_amount, 2 ),
-						number_format( $penalty_amount, 2 )
-					),
+					'trn_type'     => 'zh_rejection_reversal',
+					'perticulars'  => sprintf( __( 'Order #%d Reversal (Refunded to customer)', 'zerohold-shipping' ), $order_id ),
 					'debit'        => 0,
-					'credit'       => $total_deduction, // Deduct 125%
+					'credit'       => $order_amount,
 					'status'       => 'approved',
 					'trn_date'     => $penalty_date,
 					'balance_date' => $penalty_date,
-					'balance'      => 0, // Recalculated later
-					'trn_title'    => __( 'Order Return + Penalty', 'zerohold-shipping' ),
+					'balance'      => 0,
+					'trn_title'    => __( 'Order Reversal', 'zerohold-shipping' ),
+					'url'          => $this->get_order_url( $order_id ),
+				];
+
+				// ROW B: Rejection Penalty (-25%)
+				$penalty_entries[] = [
+					'id'           => 'ZH-FEE-' . $order_id,
+					'vendor_id'    => $vendor_id,
+					'trn_id'       => $order_id,
+					'trn_type'     => 'zh_rejection_penalty',
+					'perticulars'  => sprintf( __( 'Rejection Penalty for Order #%d (25%% Fee)', 'zerohold-shipping' ), $order_id ),
+					'debit'        => 0,
+					'credit'       => $penalty_amount,
+					'status'       => 'approved',
+					'trn_date'     => $penalty_date,
+					'balance_date' => $penalty_date,
+					'balance'      => 0,
+					'trn_title'    => __( 'Rejection Penalty', 'zerohold-shipping' ),
 					'url'          => $this->get_order_url( $order_id ),
 				];
 				
-				error_log( "ZSS: Injected rejection penalty for Order #{$order_id} (-₹{$total_deduction}: ₹{$order_amount} + ₹{$penalty_amount} penalty)" );
+				error_log( "ZSS: Injected split rejection entries for Order #{$order_id} (Rev: ₹{$order_amount}, Fee: ₹{$penalty_amount})" );
 			}
 		}
 
@@ -412,7 +424,14 @@ class DokanStatementIntegration {
 	 * @return float Adjusted balance
 	 */
 	public function deduct_shipping_from_global_balance( $balance, $vendor_id ) {
-		// Avoid infinite loops if this is called recursively (though unlikely with this filter)
+		// CRITICAL: If we are inside the Statement Report generation, do NOT deduct.
+		// Dokan's report adds the Opening Balance AND then calculates entries.
+		// If we deduct here, it poisons the "Opening Balance" row of the report.
+		if ( isset( $_GET['path'] ) && strpos( $_GET['path'], 'statement' ) !== false ) {
+			return $balance;
+		}
+
+		// Avoid infinite loops if this is called recursively
 		static $is_calculating = false;
 		if ( $is_calculating ) {
 			return $balance;
