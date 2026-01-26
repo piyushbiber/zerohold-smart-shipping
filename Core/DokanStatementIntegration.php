@@ -336,8 +336,12 @@ class DokanStatementIntegration {
 		$opening_balance = 0;
 		
 		// Extract opening balance from first entry if it exists
-		if ( ! empty( $entries ) && isset( $entries[0]['balance'] ) && $entries[0]['trn_type'] === 'opening_balance' ) {
+		if ( ! empty( $entries ) && isset( $entries[0]['trn_type'] ) && $entries[0]['trn_type'] === 'opening_balance' ) {
 			$opening_balance = (float) $entries[0]['balance'];
+			
+			// SAFETY: If this is a new vendor (opening balance poisoned by global filter),
+			// and we are in a report context, we might need to reset it to 0.
+			// However, a more robust context check in the filter itself is better.
 		}
 
 		$running_balance = $opening_balance;
@@ -368,10 +372,8 @@ class DokanStatementIntegration {
 		$start_date = $this->get_start_date( [] );
 		$end_date   = $this->get_end_date( [] );
 		
-		// For the vendor ID, attempt to get it from the results first (important for admin view)
 		$vendor_id = 0;
 		if ( ! empty( $results ) ) {
-			// Extract vendor ID from the first result if available
 			foreach ( $results as $res ) {
 				if ( isset( $res->vendor_id ) ) {
 					$vendor_id = (int) $res->vendor_id;
@@ -400,16 +402,17 @@ class DokanStatementIntegration {
 			$total_penalties += (float) $penalty->total_deduction;
 		}
 
-		// Apply Adjustments
-		if ( $total_shipping_cost > 0 || $total_penalties > 0 ) {
-			error_log( "ZSS: Adjusting summary cards. Shipping: ₹{$total_shipping_cost}, Penalties: ₹{$total_penalties}" );
-			
-			// Total Credit INCREASES (deductions)
-			$summary_data['total_credit'] += ( $total_shipping_cost + $total_penalties );
-			
-			// Balance matches individual entries recalculation
-			$summary_data['balance'] -= ( $total_shipping_cost + $total_penalties );
+		// Apply Adjustments to Credit
+		$total_custom_deductions = $total_shipping_cost + $total_penalties;
+		if ( $total_custom_deductions > 0 ) {
+			error_log( "ZSS: Adjusting summary cards. Deductions: ₹{$total_custom_deductions}" );
+			$summary_data['total_credit'] += $total_custom_deductions;
 		}
+
+		// 3. RECONCILE BALANCE Math
+		// Force Balance = Opening + Debit - Credit
+		// This prevents double-deduction from the global filter poisoning the starting math.
+		$summary_data['balance'] = (float)$summary_data['opening_balance'] + (float)$summary_data['total_debit'] - (float)$summary_data['total_credit'];
 
 		return $summary_data;
 	}
@@ -424,10 +427,17 @@ class DokanStatementIntegration {
 	 * @return float Adjusted balance
 	 */
 	public function deduct_shipping_from_global_balance( $balance, $vendor_id ) {
-		// CRITICAL: If we are inside the Statement Report generation, do NOT deduct.
-		// Dokan's report adds the Opening Balance AND then calculates entries.
-		// If we deduct here, it poisons the "Opening Balance" row of the report.
-		if ( isset( $_GET['path'] ) && strpos( $_GET['path'], 'statement' ) !== false ) {
+		// CRITICAL: Prevent "Poisoning" the Statement Report Opening Balance.
+		// If we are handling any request related to analytics, statements, or reports, we return raw balance.
+		// This allows the report to calculate its own date-aware ledger correctly.
+		$is_report_context = ( 
+			( isset( $_GET['path'] ) && strpos( $_GET['path'], 'analytics' ) !== false ) || 
+			( isset( $_GET['page'] ) && strpos( $_GET['page'], 'report' ) !== false ) ||
+			( isset( $_SERVER['REQUEST_URI'] ) && strpos( $_SERVER['REQUEST_URI'], '/reports' ) !== false ) ||
+			( isset( $_SERVER['REQUEST_URI'] ) && strpos( $_SERVER['REQUEST_URI'], '/analytics' ) !== false )
+		);
+
+		if ( $is_report_context ) {
 			return $balance;
 		}
 
