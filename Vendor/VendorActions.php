@@ -352,8 +352,12 @@ class VendorActions {
 						$total_cost = isset( $winner->base ) ? $winner->base : 0;
 						$vendor_share = $total_cost / 2;
 						update_post_meta( $order_id, '_zh_shipping_cost', $vendor_share );
+						update_post_meta( $order_id, '_zh_shipping_cost', $vendor_share );
 						update_post_meta( $order_id, '_zh_shipping_date', current_time( 'mysql' ) );
 						error_log( "ZSS: Stored forward shipping cost ₹{$vendor_share} (50%% of ₹{$total_cost}) in order meta for Order #{$order_id}" );
+
+						// Step 2.6.7: Mirror Shipping Cost to Order Item for Analytics (Transaction-Time Mirroring)
+						$this->inject_shipping_line_item( $order_id, $vendor_share );
 					}
 
                     // BigShip Specific Storage
@@ -784,5 +788,41 @@ class VendorActions {
 			'origin_pincode' => $origin_pin,
 			'is_cached'      => false
 		]);
+	}
+	/**
+	 * Helper: Inject shipping line item into the order for Analytics visibility.
+	 * 
+	 * @param int   $order_id
+	 * @param float $cost
+	 */
+	private function inject_shipping_line_item( $order_id, $cost ) {
+		if ( ! $order_id || ! $cost ) {
+			return;
+		}
+
+		$order = wc_get_order( $order_id );
+		if ( ! $order ) {
+			return;
+		}
+
+		// Remove existing shipping lines to prevent duplication
+		foreach ( $order->get_items( 'shipping' ) as $item_id => $item ) {
+			$order->remove_item( $item_id );
+		}
+
+		// Create standard WooCommerce shipping line item
+		$shipping_item = new \WC_Order_Item_Shipping();
+		$shipping_item->set_method_title( 'ZeroHold Shipping' );
+		$shipping_item->set_method_id( 'zerohold_shipping' );
+		$shipping_item->set_total( (float) $cost );
+		
+		// Add to order
+		$order->add_item( $shipping_item );
+		
+		// Force recalculation so totals update in WC tables
+		$order->calculate_totals();
+		$order->save();
+
+		error_log( "ZSS: Injected shipping line item ₹{$cost} into Order #{$order_id} for Analytics." );
 	}
 }

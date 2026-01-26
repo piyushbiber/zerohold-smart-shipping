@@ -28,8 +28,16 @@ class DokanStatementIntegration {
 		// Hook into Global Earnings filter to ensure dashboard math consistency
 		add_filter( 'dokan_get_seller_earnings', [ $this, 'deduct_shipping_from_global_balance' ], 10, 2 );
 
-		// Hook into WooCommerce Analytics Revenue Report (Modern Dashboard)
-		add_filter( 'woocommerce_rest_prepare_report_revenue_stats', [ $this, 'inject_shipping_into_analytics' ], 10, 3 );
+		// Hook into Dokan Pro Revenue Report filters (Legacy)
+		// add_filter( 'dokan_admin_report_data', [ $this, 'sync_revenue_summary_card' ], 10, 1 );
+		
+		// PRIMARY: Hook into WooCommerce Analytics Revenue Report REST API
+		// Disabled in favor of Transaction-Time Mirroring (creating real shipping line items)
+		// add_filter( 'woocommerce_rest_prepare_report_revenue_stats', [ $this, 'inject_shipping_into_analytics' ], 10, 3 );
+		// add_filter( 'dokan_rest_prepare_report_revenue_stats', [ $this, 'inject_shipping_into_analytics' ], 10, 3 );
+
+		// FALLBACK: Hook into query args to force SQL modification if REST fails
+		// add_filter( 'woocommerce_analytics_report_query_args', [ $this, 'force_revenue_report_adjustments' ], 10, 2 );
 	}
 
 	/**
