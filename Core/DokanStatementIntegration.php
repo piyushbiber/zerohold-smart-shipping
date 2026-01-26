@@ -362,100 +362,96 @@ class DokanStatementIntegration {
 	}
 
 	/**
-	 * Sync the "Shipping" summary card in the Dokan Pro Revenue report.
+	 * Inject custom shipping expenses into WooCommerce Analytics Revenue Report.
+	 * 
+	 * @param WP_REST_Response $response The response object.
+	 * @param object           $report   The report object.
+	 * @param WP_REST_Request  $request  The request object.
+	 * 
+	 * @return WP_REST_Response Modified response.
 	 */
-	public function sync_revenue_summary_card( $report_data ) {
-		$vendor_id = isset( $report_data->seller_id ) ? (int) $report_data->seller_id : dokan_get_current_user_id();
+	public function inject_shipping_into_analytics( $response, $report, $request ) {
+		$data = $response->get_data();
 		
-		// Dates from current request if available (support both standard and _alt params)
-		$start_date = isset( $_GET['start_date'] ) ? sanitize_text_field( $_GET['start_date'] ) : (isset( $_GET['start_date_alt'] ) ? sanitize_text_field( $_GET['start_date_alt'] ) : $this->get_start_date( [] ));
-		$end_date   = isset( $_GET['end_date'] ) ? sanitize_text_field( $_GET['end_date'] ) : (isset( $_GET['end_date_alt'] ) ? sanitize_text_field( $_GET['end_date_alt'] ) : $this->get_end_date( [] ));
-
-		// FORCED DEBUG LOG
-		$debug_msg = date('[Y-m-d H:i:s]') . " ZSS REVENUE HOOK FIRED - Vendor: {$vendor_id}, Range: {$start_date} to {$end_date}\n";
-		file_put_contents( __DIR__ . '/debug_revenue.log', $debug_msg, FILE_APPEND );
-
-		$shipping_entries = $this->query_shipping_orders( $vendor_id, $start_date, $end_date );
-		
-		$custom_shipping_total = 0;
-		foreach ( $shipping_entries as $entry ) {
-			$custom_shipping_total += (float) $entry->shipping_cost;
-		}
-
-		if ( $custom_shipping_total > 0 ) {
-			// Add to total_shipping card
-			$report_data->total_shipping = (float) $report_data->total_shipping + $custom_shipping_total;
-			
-			// Adjust net_sales (Net = Total Sales - Shipping - Taxes)
-			$report_data->net_sales = (float) $report_data->net_sales - $custom_shipping_total;
-			
-			error_log( "ZSS: Updated Revenue summary. Added ₹{$custom_shipping_total} to shipping card. New total: ₹{$report_data->total_shipping}" );
-		} else {
-			error_log( "ZSS DEBUG: No shipping charges found for Revenue summary in this range." );
-		}
-
-		return $report_data;
-	}
-
-	/**
-	 * Sync the shipping graph line and bottom table rows in Revenue report.
-	 */
-	public function sync_revenue_chart_and_table( $chart_data ) {
-		// Try to detect vendor ID from the context. Since we only have chart data here,
-		// we rely on current user or meta if we can find any order ID in the data.
+		// Extract Vendor ID
+		// WC Analytics usually passes vendor info via context or we rely on current user
 		$vendor_id = dokan_get_current_user_id();
-		
-		$start_date = isset( $_GET['start_date'] ) ? sanitize_text_field( $_GET['start_date'] ) : (isset( $_GET['start_date_alt'] ) ? sanitize_text_field( $_GET['start_date_alt'] ) : $this->get_start_date( [] ));
-		$end_date   = isset( $_GET['end_date'] ) ? sanitize_text_field( $_GET['end_date'] ) : (isset( $_GET['end_date_alt'] ) ? sanitize_text_field( $_GET['end_date_alt'] ) : $this->get_end_date( [] ));
-
-		error_log( "ZSS DEBUG: sync_revenue_chart_and_table - Vendor: {$vendor_id}, Range: {$start_date} to {$end_date}" );
-
-		$shipping_entries = $this->query_shipping_orders( $vendor_id, $start_date, $end_date );
-		
-		if ( empty( $shipping_entries ) ) {
-			return $chart_data;
+		if ( ! $vendor_id ) {
+			return $response;
 		}
 
-		// Group costs by date (Y-m-d)
+		// Extract dates from request parameters
+		$after  = $request->get_param( 'after' );
+		$before = $request->get_param( 'before' );
+
+		// Default to this month if missing (though WC usually provides them)
+		if ( empty( $after ) ) {
+			$after = dokan_current_datetime()->modify( 'first day of this month' )->format( 'c' );
+		}
+		if ( empty( $before ) ) {
+			$before = dokan_current_datetime()->format( 'c' );
+		}
+
+		// Format dates for our DB query
+		$start_date = date( 'Y-m-d', strtotime( $after ) );
+		$end_date   = date( 'Y-m-d', strtotime( $before ) );
+
+		// Query our custom shipping charges
+		$shipping_entries = $this->query_shipping_orders( $vendor_id, $start_date, $end_date );
+
+		if ( empty( $shipping_entries ) ) {
+			return $response;
+		}
+
+		// Group costs by date (Y-m-d) for interval matching
 		$daily_costs = [];
+		$total_custom_shipping = 0;
+
 		foreach ( $shipping_entries as $entry ) {
 			$date = date( 'Y-m-d', strtotime( $entry->shipping_date ) );
+			$cost = (float) $entry->shipping_cost;
+			
 			if ( ! isset( $daily_costs[ $date ] ) ) {
 				$daily_costs[ $date ] = 0;
 			}
-			$daily_costs[ $date ] += (float) $entry->shipping_cost;
+			$daily_costs[ $date ] += $cost;
+			$total_custom_shipping += $cost;
 		}
 
-		// Update shipping_amounts array
-		if ( isset( $chart_data['shipping_amounts'] ) ) {
-			foreach ( $chart_data['shipping_amounts'] as $key => &$day_point ) {
-				$point_date = date( 'Y-m-d', $day_point[0] / 1000 );
-				
-				if ( isset( $daily_costs[ $point_date ] ) ) {
-					$amount = $daily_costs[ $point_date ];
-					$day_point[1] += $amount;
-					
-					// Also need to deduct this from net_order_amounts to keep table math correct
-					if ( isset( $chart_data['net_order_amounts'][ $key ] ) ) {
-						$chart_data['net_order_amounts'][ $key ][1] -= $amount;
+		// 1. UPDATE TOTALS
+		if ( isset( $data['totals'] ) ) {
+			// Add to shipping total
+			$data['totals']['shipping'] = (float) ($data['totals']['shipping'] ?? 0) + $total_custom_shipping;
+			
+			// Deduct from net_revenue (Net Sales = Gross - Shipping - Tax)
+			// Note: WC Analytics might call it 'net_revenue' or 'net_sales' depending on version
+			if ( isset( $data['totals']['net_revenue'] ) ) {
+				$data['totals']['net_revenue'] = (float) $data['totals']['net_revenue'] - $total_custom_shipping;
+			}
+		}
+
+		// 2. UPDATE INTERVALS (Chart/Graph Data)
+		if ( isset( $data['intervals'] ) && is_array( $data['intervals'] ) ) {
+			foreach ( $data['intervals'] as &$interval ) {
+				// Interval 'date_start' is usually "2025-01-26 00:00:00"
+				$interval_date = date( 'Y-m-d', strtotime( $interval['date_start'] ) );
+
+				if ( isset( $daily_costs[ $interval_date ] ) ) {
+					$amount = $daily_costs[ $interval_date ];
+
+					// Update subarray totals
+					if ( isset( $interval['subtotals'] ) ) {
+						$interval['subtotals']['shipping'] = (float) ($interval['subtotals']['shipping'] ?? 0) + $amount;
+						
+						if ( isset( $interval['subtotals']['net_revenue'] ) ) {
+							$interval['subtotals']['net_revenue'] = (float) $interval['subtotals']['net_revenue'] - $amount;
+						}
 					}
-					error_log( "ZSS: Added ₹{$amount} to graph for date {$point_date}" );
 				}
 			}
 		}
 
-		return $chart_data;
-	}
-
-	public function log_analytics_rest_response( $served, $result, $request, $server ) {
-		$route = $request->get_route();
-		if ( strpos( $route, 'analytics' ) !== false || strpos( $route, 'reports' ) !== false || strpos( $route, 'vendor-dashboard' ) !== false ) {
-			$data = $result->data;
-			$log_entry = date('[Y-m-d H:i:s]') . " REST ROUTE: {$route}\n";
-			$log_entry .= "DATA: " . print_r($data, true) . "\n\n";
-			// Use a separate log file
-			file_put_contents( __DIR__ . '/rest_debug.log', $log_entry, FILE_APPEND );
-		}
-		return $served;
+		$response->set_data( $data );
+		return $response;
 	}
 }
