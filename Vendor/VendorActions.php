@@ -671,14 +671,14 @@ class VendorActions {
 		}
 
 		// 3. Cache Check
-		// $cached = \Zerohold\Shipping\Core\EstimateCache::get( $vendor_id, $origin_pin, $final_slab );
-		// if ( $cached ) {
-		// 	// Ensure vendor share is calculated for cached results too
-		// 	$cached['vendor_min'] = floor( $cached['min_price'] / 2 );
-		// 	$cached['vendor_max'] = ceil( $cached['max_price'] / 2 );
-		// 	
-		// 	wp_send_json_success( array_merge( $cached, [ 'is_cached' => true, 'slab_info' => $slab_data ] ) );
-		// }
+		$cached = \Zerohold\Shipping\Core\EstimateCache::get( $vendor_id, $origin_pin, $final_slab );
+		if ( $cached ) {
+			// Ensure vendor share is calculated for cached results too
+			$cached['vendor_min'] = floor( $cached['min_price'] / 2 );
+			$cached['vendor_max'] = ceil( $cached['max_price'] / 2 );
+			
+			wp_send_json_success( array_merge( $cached, [ 'is_cached' => true, 'slab_info' => $slab_data ] ) );
+		}
 
 		// 1. Get Zone Representative Pincodes (DYNAMIC)
 		$resolver = new \Zerohold\Shipping\Core\ZoneResolver();
@@ -706,22 +706,13 @@ class VendorActions {
 		$bigship = new \Zerohold\Shipping\Platforms\BigShipAdapter();
 		$rates   = $bigship->estimateRates( $origin_pin, $zone_pins, $final_slab );
 
-		error_log( "ZSS DEBUG: BigShip Result Count: " . count( $rates ) );
-		// error_log( "ZSS DEBUG: BigShip Data: " . print_r( $rates, true ) );
-
 		// Fallback to Shiprocket if no rates found
 		if ( empty( $rates ) ) {
-			error_log( "ZSS DEBUG: BigShip empty/failed. Attempting Shiprocket fallback..." );
-			error_log( "ZSS DEBUG: Origin: $origin_pin, Zones: " . print_r( $zone_pins, true ) );
-			
 			$shiprocket = new \Zerohold\Shipping\Platforms\ShiprocketAdapter();
 			$rates      = $shiprocket->estimateRates( $origin_pin, $zone_pins, $final_slab );
-			
-			error_log( "ZSS DEBUG: Shiprocket Raw Rates: " . print_r( $rates, true ) );
 		}
 
 		if ( empty( $rates ) ) {
-			error_log( "ZSS ERROR: Both BigShip and Shiprocket returned no rates." );
 			wp_send_json_error( 'Unable to fetch estimate right now. Please try again later.' );
 		}
 
@@ -730,13 +721,8 @@ class VendorActions {
 		$zone_breakdown = [];
 		$all_prices = [];
 
-		error_log( "ZSS DEBUG: Processing Rates for Display..." );
-
 		foreach ( $zone_pins as $zone_key => $pin ) {
 			$zone_rates = $rates[ $zone_key ] ?? [];
-			
-			// error_log( "ZSS DEBUG: Zone $zone_key rates: " . print_r($zone_rates, true) );
-
 			$min = 999999;
 			$max = 0;
 
