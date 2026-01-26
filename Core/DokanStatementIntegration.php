@@ -375,8 +375,10 @@ class DokanStatementIntegration {
 		$vendor_id = 0;
 		if ( ! empty( $results ) ) {
 			foreach ( $results as $res ) {
-				if ( isset( $res->vendor_id ) ) {
-					$vendor_id = (int) $res->vendor_id;
+				// Dokan results can be objects or arrays depending on version/context
+				$res_vendor_id = is_object( $res ) ? ( $res->vendor_id ?? 0 ) : ( $res['vendor_id'] ?? 0 );
+				if ( $res_vendor_id ) {
+					$vendor_id = (int) $res_vendor_id;
 					break;
 				}
 			}
@@ -412,7 +414,13 @@ class DokanStatementIntegration {
 		// 3. RECONCILE BALANCE Math
 		// Force Balance = Opening + Debit - Credit
 		// This prevents double-deduction from the global filter poisoning the starting math.
-		$summary_data['balance'] = (float)$summary_data['opening_balance'] + (float)$summary_data['total_debit'] - (float)$summary_data['total_credit'];
+		$opening = (float)$summary_data['opening_balance'];
+		$debit   = (float)$summary_data['total_debit'];
+		$credit  = (float)$summary_data['total_credit'];
+		
+		$summary_data['balance'] = $opening + $debit - $credit;
+		
+		error_log( "ZSS: Summary reconciled. Opening: {$opening}, Debit: {$debit}, Credit: {$credit}, Final: " . $summary_data['balance'] );
 
 		return $summary_data;
 	}
@@ -433,8 +441,7 @@ class DokanStatementIntegration {
 		$is_report_context = ( 
 			( isset( $_GET['path'] ) && strpos( $_GET['path'], 'analytics' ) !== false ) || 
 			( isset( $_GET['page'] ) && strpos( $_GET['page'], 'report' ) !== false ) ||
-			( isset( $_SERVER['REQUEST_URI'] ) && strpos( $_SERVER['REQUEST_URI'], '/reports' ) !== false ) ||
-			( isset( $_SERVER['REQUEST_URI'] ) && strpos( $_SERVER['REQUEST_URI'], '/analytics' ) !== false )
+			( isset( $_SERVER['REQUEST_URI'] ) && preg_match( '/(reports|analytics|statement|dokan\/v1\/report)/i', $_SERVER['REQUEST_URI'] ) )
 		);
 
 		if ( $is_report_context ) {
