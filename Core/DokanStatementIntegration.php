@@ -18,6 +18,9 @@ class DokanStatementIntegration {
 	public function __construct() {
 		// Hook into Dokan Statement filter
 		add_filter( 'dokan_report_statement_entries', [ $this, 'inject_shipping_entries' ], 10, 3 );
+		
+		// Hook into Dokan Summary filter to sync top cards
+		add_filter( 'dokan_report_statement_summary', [ $this, 'sync_summary_cards' ], 10, 3 );
 	}
 
 	/**
@@ -201,14 +204,14 @@ class DokanStatementIntegration {
 				'vendor_id'    => $vendor_id,
 				'trn_id'       => $order_id,
 				'trn_type'     => 'zh_shipping',
-				'perticulars'  => sprintf( 'Shipping Charge for Order #%d', $order_id ),
+				'perticulars'  => sprintf( 'Forward Shipping for Order #%d', $order_id ),
 				'debit'        => $debit,
 				'credit'       => $credit,
 				'status'       => '',
 				'trn_date'     => $shipping_date,
 				'balance_date' => $shipping_date,
 				'balance'      => 0, // Will be recalculated
-				'trn_title'    => __( 'Shipping Charge', 'zerohold-shipping' ),
+				'trn_title'    => __( 'Forward Shipping', 'zerohold-shipping' ),
 				'url'          => $this->get_order_url( $order_id ),
 			];
 		}
@@ -255,5 +258,44 @@ class DokanStatementIntegration {
 		}
 
 		return $entries;
+	/**
+	 * Sync top summary cards (Total Debit, Total Credit, Balance) with shipping charges.
+	 * 
+	 * @param array  $summary_data    Original summary data
+	 * @param object $results         SQL raw results
+	 * @param float  $opening_balance Calculated opening balance
+	 * 
+	 * @return array Modified summary data
+	 */
+	public function sync_summary_cards( $summary_data, $results, $opening_balance ) {
+		// Use the same date range and vendor from context if possible
+		// Since we don't have $args here directly, we try to extract from current request
+		$start_date = isset( $_GET['start_date'] ) ? sanitize_text_field( $_GET['start_date'] ) : $this->get_start_date( [] );
+		$end_date   = isset( $_GET['end_date'] ) ? sanitize_text_field( $_GET['end_date'] ) : $this->get_end_date( [] );
+		$vendor_id  = dokan_get_current_user_id();
+
+		error_log( "ZSS: Syncing summary cards for Vendor #{$vendor_id} ($start_date to $end_date)" );
+
+		// Query our charges
+		$shipping_entries = $this->query_shipping_orders( $vendor_id, $start_date, $end_date );
+		
+		$total_shipping_cost = 0;
+		foreach ( $shipping_entries as $entry ) {
+			$total_shipping_cost += (float) $entry->shipping_cost;
+		}
+
+		if ( $total_shipping_cost > 0 ) {
+			error_log( "ZSS: Adjusting summary cards. Total shipping: ₹{$total_shipping_cost}" );
+			
+			// Total Debit remains SAME (shipping is not an earning)
+			// Total Credit INCREASES (shipping is a deduction)
+			$summary_data['total_credit'] += $total_shipping_cost;
+			
+			// Balance matches individual entries recalculation: 
+			// Balance = Opening + Total Debit - Total Credit
+			$summary_data['balance'] -= $total_shipping_cost;
+		}
+
+		return $summary_data;
 	}
 }
