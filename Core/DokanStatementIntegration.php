@@ -20,13 +20,14 @@ class DokanStatementIntegration {
 		add_filter( 'dokan_report_statement_entries', [ $this, 'inject_shipping_entries' ], 10, 3 );
 		
 		// Hook into Dokan Summary filter to sync top cards
-		add_filter( 'dokan_report_statement_summary', [ $this, 'sync_summary_cards' ], 10, 3 );
+		// add_filter( 'dokan_report_statement_summary', [ $this, 'sync_summary_cards' ], 10, 3 );
 
 		// Hook into Global Balance filter to sync withdrawal page and other areas
-		add_filter( 'dokan_get_seller_balance', [ $this, 'deduct_shipping_from_global_balance' ], 10, 2 );
+		// DISABLED: Native Mirroring now handles this naturally. Keeping hooks active would cause double deduction.
+		// add_filter( 'dokan_get_seller_balance', [ $this, 'deduct_shipping_from_global_balance' ], 10, 2 );
 
 		// Hook into Global Earnings filter to ensure dashboard math consistency
-		add_filter( 'dokan_get_seller_earnings', [ $this, 'deduct_shipping_from_global_balance' ], 10, 2 );
+		// add_filter( 'dokan_get_seller_earnings', [ $this, 'deduct_shipping_from_global_balance' ], 10, 2 );
 
 		// Hook into Dokan Pro Revenue Report filters (Legacy)
 		// add_filter( 'dokan_admin_report_data', [ $this, 'sync_revenue_summary_card' ], 10, 1 );
@@ -59,18 +60,33 @@ class DokanStatementIntegration {
 
 		error_log( "ZSS: Dokan Statement Hook Fired - Vendor: {$vendor_id}, Range: {$start_date} to {$end_date}" );
 
-		// STEP 1: Keep Dokan entries as-is for now
-		$filtered_entries = $entries; // Use all entries
-
-		error_log( sprintf( 
-			"ZSS: Processing Dokan entries - Total: %d", 
-			count( $filtered_entries ) 
-		) );
+		// STEP 1: Keep Dokan entries and prepare for modification
+		$filtered_entries = $entries; 
 
 		// STEP 2: Query orders with shipping charges from meta
 		$shipping_orders = $this->query_shipping_orders( $vendor_id, $start_date, $end_date );
 
 		error_log( "ZSS: Found " . count($shipping_orders) . " shipping charges" );
+
+		// STEP 2.5: "GROSS UP" Logic (Prevent Double Deduction)
+		// Since we now "Mirror" forward shipping into the WC Order (via Line Item), Dokan natively deducts it from the Order Earnings row.
+		// To show a separate "Shipping" row WITHOUT double-deducting, we must add the cost BACK to the Order Row first.
+		foreach ( $filtered_entries as &$dokan_entry ) {
+			if ( $dokan_entry['trn_type'] === 'dokan_orders' ) {
+				$order_id = (int) $dokan_entry['trn_id'];
+				
+				// Find matching FORWARD shipping charge for this order
+				foreach ( $shipping_orders as $ship_entry ) {
+					if ( (int) $ship_entry->order_id === $order_id && $ship_entry->shipping_type === 'forward' ) {
+						// Add the cost back to the Debit (Earning) column
+						$cost = (float) $ship_entry->shipping_cost;
+						$dokan_entry['debit'] += $cost; // Gross up
+						error_log( "ZSS: Grossed up Order #{$order_id} by ₹{$cost} to allow explicit shipping row." );
+					}
+				}
+			}
+		}
+		unset( $dokan_entry ); // Break reference
 		
 		// Debug: Log the shipping orders
 		if ( ! empty( $shipping_orders ) ) {
