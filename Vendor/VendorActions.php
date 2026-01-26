@@ -706,6 +706,9 @@ class VendorActions {
 		$bigship = new \Zerohold\Shipping\Platforms\BigShipAdapter();
 		$rates   = $bigship->estimateRates( $origin_pin, $zone_pins, $final_slab );
 
+		error_log( "ZSS DEBUG: BigShip Result Count: " . count( $rates ) );
+		// error_log( "ZSS DEBUG: BigShip Data: " . print_r( $rates, true ) );
+
 		// Fallback to Shiprocket if no rates found
 		if ( empty( $rates ) ) {
 			error_log( "ZSS DEBUG: BigShip empty/failed. Attempting Shiprocket fallback..." );
@@ -727,13 +730,20 @@ class VendorActions {
 		$zone_breakdown = [];
 		$all_prices = [];
 
+		error_log( "ZSS DEBUG: Processing Rates for Display..." );
+
 		foreach ( $zone_pins as $zone_key => $pin ) {
 			$zone_rates = $rates[ $zone_key ] ?? [];
+			
+			// error_log( "ZSS DEBUG: Zone $zone_key rates: " . print_r($zone_rates, true) );
+
 			$min = 999999;
 			$max = 0;
 
 			foreach ( $zone_rates as $r ) {
-				$val = floatval( $r->base );
+				// Handle both object and array style, just in case
+				$val = is_object($r) ? floatval( $r->base ) : floatval( $r['base'] ?? 0 );
+				
 				if ( $val < $min ) $min = $val;
 				if ( $val > $max ) $max = $val;
 			}
@@ -742,6 +752,8 @@ class VendorActions {
 				$min = 0;
 				$max = 0;
 			}
+			
+			// error_log( "ZSS DEBUG: Zone $zone_key Final: Min $min, Max $max" );
 
 			// Add range padding to look professional in UI
 			$range_min = floor($min);
