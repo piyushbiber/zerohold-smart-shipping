@@ -24,6 +24,9 @@ class DokanStatementIntegration {
 
 		// Hook into Global Balance filter to sync withdrawal page and other areas
 		add_filter( 'dokan_get_seller_balance', [ $this, 'deduct_shipping_from_global_balance' ], 10, 2 );
+
+		// Hook into Global Earnings filter to ensure dashboard math consistency
+		add_filter( 'dokan_get_seller_earnings', [ $this, 'deduct_shipping_from_global_balance' ], 10, 2 );
 	}
 
 	/**
