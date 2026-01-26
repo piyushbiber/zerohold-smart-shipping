@@ -709,7 +709,7 @@ class VendorActions {
 		// Fallback to Shiprocket if no rates found
 		if ( empty( $rates ) ) {
 			$shiprocket = new \Zerohold\Shipping\Platforms\ShiprocketAdapter();
-			$rates      = $shiprocket->estimateRates( $origin_pin, $hubs, $final_slab );
+			$rates      = $shiprocket->estimateRates( $origin_pin, $zone_pins, $final_slab );
 		}
 
 		if ( empty( $rates ) ) {
