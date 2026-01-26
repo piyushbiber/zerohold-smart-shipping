@@ -20,14 +20,13 @@ class DokanStatementIntegration {
 		add_filter( 'dokan_report_statement_entries', [ $this, 'inject_shipping_entries' ], 10, 3 );
 		
 		// Hook into Dokan Summary filter to sync top cards
-		// add_filter( 'dokan_report_statement_summary', [ $this, 'sync_summary_cards' ], 10, 3 );
+		add_filter( 'dokan_report_statement_summary', [ $this, 'sync_summary_cards' ], 10, 3 );
 
 		// Hook into Global Balance filter to sync withdrawal page and other areas
-		// DISABLED: Native Mirroring now handles this naturally. Keeping hooks active would cause double deduction.
-		// add_filter( 'dokan_get_seller_balance', [ $this, 'deduct_shipping_from_global_balance' ], 10, 2 );
+		add_filter( 'dokan_get_seller_balance', [ $this, 'deduct_shipping_from_global_balance' ], 10, 2 );
 
 		// Hook into Global Earnings filter to ensure dashboard math consistency
-		// add_filter( 'dokan_get_seller_earnings', [ $this, 'deduct_shipping_from_global_balance' ], 10, 2 );
+		add_filter( 'dokan_get_seller_earnings', [ $this, 'deduct_shipping_from_global_balance' ], 10, 2 );
 
 		// Hook into Dokan Pro Revenue Report filters (Legacy)
 		// add_filter( 'dokan_admin_report_data', [ $this, 'sync_revenue_summary_card' ], 10, 1 );
@@ -422,22 +421,29 @@ class DokanStatementIntegration {
 
 		// We need to query ALL shipping charges for this vendor, not just for a date range,
 		// because 'balance' is a lifetime value in Dokan.
-		// However, query_shipping_orders requires dates. We'll use a very wide range.
 		$start_date = '2000-01-01';
 		$end_date   = '2100-12-31';
 
+		// 1. SHIPPING
 		$shipping_entries = $this->query_shipping_orders( $vendor_id, $start_date, $end_date );
-		
 		$total_shipping_cost = 0;
 		foreach ( $shipping_entries as $entry ) {
 			$total_shipping_cost += (float) $entry->shipping_cost;
 		}
 
-		$is_calculating = false;
+		// 2. REJECTION PENALTIES
+		$penalty_entries = $this->query_rejection_penalties( $vendor_id, $start_date, $end_date );
+		$total_penalties = 0;
+		foreach ( $penalty_entries as $penalty ) {
+			$total_penalties += (float) $penalty->total_deduction;
+		}
 
-		if ( $total_shipping_cost > 0 ) {
-			error_log( "ZSS: Deducting ₹{$total_shipping_cost} from global balance for Vendor #{$vendor_id}" );
-			return $balance - $total_shipping_cost;
+		$is_calculating = false;
+		$total_deductions = $total_shipping_cost + $total_penalties;
+
+		if ( $total_deductions > 0 ) {
+			error_log( "ZSS: Deducting ₹{$total_deductions} (Shipping: {$total_shipping_cost}, Penalties: {$total_penalties}) from global balance for Vendor #{$vendor_id}" );
+			return $balance - $total_deductions;
 		}
 
 		return $balance;
