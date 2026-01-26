@@ -454,4 +454,18 @@ class DokanStatementIntegration {
 		$response->set_data( $data );
 		return $response;
 	}
+
+	public function log_analytics_rest_response( $served, $result, $request, $server ) {
+		$route = $request->get_route();
+		$debug_file = 'c:/Users/Piyush/Downloads/UI AND TEXONOMY FOR ANTIGRAVITY/ZEROHOLD UI AND MASTER TEXONOMY/debug_global.txt';
+		
+		// Log matching routes to debug
+		if ( strpos( $route, 'analytics' ) !== false || strpos( $route, 'reports' ) !== false || strpos( $route, 'vendor-dashboard' ) !== false ) {
+			$log_entry = date('[Y-m-d H:i:s]') . " REST REQUEST: {$route}\n";
+			$data = $result->data;
+			$log_entry .= "DATA KEYS: " . implode(', ', array_keys((array)$data)) . "\n\n";
+			file_put_contents( $debug_file, $log_entry, FILE_APPEND );
+		}
+		return $served;
+	}
 }
