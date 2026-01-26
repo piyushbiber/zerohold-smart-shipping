@@ -31,6 +31,9 @@ class DokanStatementIntegration {
 		// Hook into Dokan Pro Revenue Report filters
 		add_filter( 'dokan_admin_report_data', [ $this, 'sync_revenue_summary_card' ], 10, 1 );
 		add_filter( 'dokan_admin_report_chart_data', [ $this, 'sync_revenue_chart_and_table' ], 10, 1 );
+
+		// Global REST Logger for Analytics debugging
+		add_filter( 'rest_pre_serve_request', [ $this, 'log_analytics_rest_response' ], 10, 4 );
 	}
 
 	/**
@@ -366,14 +369,15 @@ class DokanStatementIntegration {
 	 * Sync the "Shipping" summary card in the Dokan Pro Revenue report.
 	 */
 	public function sync_revenue_summary_card( $report_data ) {
-		$vendor_id = isset( $report_data->seller_id ) ? $report_data->seller_id : dokan_get_current_user_id();
+		$vendor_id = isset( $report_data->seller_id ) ? (int) $report_data->seller_id : dokan_get_current_user_id();
 		
-		// In SalesByDate.php, Dokan calculates total_shipping as customer-paid shipping.
-		// We want to ADD our vendor-paid shipping costs to the "Shipping" display card.
-		
-		// Dates from current request if available
-		$start_date = isset( $_GET['start_date_alt'] ) ? sanitize_text_field( $_GET['start_date_alt'] ) : $this->get_start_date( [] );
-		$end_date   = isset( $_GET['end_date_alt'] ) ? sanitize_text_field( $_GET['end_date_alt'] ) : $this->get_end_date( [] );
+		// Dates from current request if available (support both standard and _alt params)
+		$start_date = isset( $_GET['start_date'] ) ? sanitize_text_field( $_GET['start_date'] ) : (isset( $_GET['start_date_alt'] ) ? sanitize_text_field( $_GET['start_date_alt'] ) : $this->get_start_date( [] ));
+		$end_date   = isset( $_GET['end_date'] ) ? sanitize_text_field( $_GET['end_date'] ) : (isset( $_GET['end_date_alt'] ) ? sanitize_text_field( $_GET['end_date_alt'] ) : $this->get_end_date( [] ));
+
+		// FORCED DEBUG LOG
+		$debug_msg = date('[Y-m-d H:i:s]') . " ZSS REVENUE HOOK FIRED - Vendor: {$vendor_id}, Range: {$start_date} to {$end_date}\n";
+		file_put_contents( __DIR__ . '/debug_revenue.log', $debug_msg, FILE_APPEND );
 
 		$shipping_entries = $this->query_shipping_orders( $vendor_id, $start_date, $end_date );
 		
@@ -384,13 +388,14 @@ class DokanStatementIntegration {
 
 		if ( $custom_shipping_total > 0 ) {
 			// Add to total_shipping card
-			$report_data->total_shipping += $custom_shipping_total;
+			$report_data->total_shipping = (float) $report_data->total_shipping + $custom_shipping_total;
 			
 			// Adjust net_sales (Net = Total Sales - Shipping - Taxes)
-			// Since we increased shipping, net sales must decrease.
-			$report_data->net_sales -= $custom_shipping_total;
+			$report_data->net_sales = (float) $report_data->net_sales - $custom_shipping_total;
 			
-			error_log( "ZSS: Updated Revenue summary. Added ₹{$custom_shipping_total} to shipping card." );
+			error_log( "ZSS: Updated Revenue summary. Added ₹{$custom_shipping_total} to shipping card. New total: ₹{$report_data->total_shipping}" );
+		} else {
+			error_log( "ZSS DEBUG: No shipping charges found for Revenue summary in this range." );
 		}
 
 		return $report_data;
@@ -400,12 +405,14 @@ class DokanStatementIntegration {
 	 * Sync the shipping graph line and bottom table rows in Revenue report.
 	 */
 	public function sync_revenue_chart_and_table( $chart_data ) {
-		// $chart_data['shipping_amounts'] contains [ [timestamp, amount], ... ]
-		// We need to inject our daily totals into these arrays.
-		
+		// Try to detect vendor ID from the context. Since we only have chart data here,
+		// we rely on current user or meta if we can find any order ID in the data.
 		$vendor_id = dokan_get_current_user_id();
-		$start_date = isset( $_GET['start_date_alt'] ) ? sanitize_text_field( $_GET['start_date_alt'] ) : $this->get_start_date( [] );
-		$end_date   = isset( $_GET['end_date_alt'] ) ? sanitize_text_field( $_GET['end_date_alt'] ) : $this->get_end_date( [] );
+		
+		$start_date = isset( $_GET['start_date'] ) ? sanitize_text_field( $_GET['start_date'] ) : (isset( $_GET['start_date_alt'] ) ? sanitize_text_field( $_GET['start_date_alt'] ) : $this->get_start_date( [] ));
+		$end_date   = isset( $_GET['end_date'] ) ? sanitize_text_field( $_GET['end_date'] ) : (isset( $_GET['end_date_alt'] ) ? sanitize_text_field( $_GET['end_date_alt'] ) : $this->get_end_date( [] ));
+
+		error_log( "ZSS DEBUG: sync_revenue_chart_and_table - Vendor: {$vendor_id}, Range: {$start_date} to {$end_date}" );
 
 		$shipping_entries = $this->query_shipping_orders( $vendor_id, $start_date, $end_date );
 		
@@ -426,7 +433,6 @@ class DokanStatementIntegration {
 		// Update shipping_amounts array
 		if ( isset( $chart_data['shipping_amounts'] ) ) {
 			foreach ( $chart_data['shipping_amounts'] as $key => &$day_point ) {
-				// day_point[0] is timestamp in MS, day_point[1] is amount
 				$point_date = date( 'Y-m-d', $day_point[0] / 1000 );
 				
 				if ( isset( $daily_costs[ $point_date ] ) ) {
@@ -437,10 +443,23 @@ class DokanStatementIntegration {
 					if ( isset( $chart_data['net_order_amounts'][ $key ] ) ) {
 						$chart_data['net_order_amounts'][ $key ][1] -= $amount;
 					}
+					error_log( "ZSS: Added ₹{$amount} to graph for date {$point_date}" );
 				}
 			}
 		}
 
 		return $chart_data;
+	}
+
+	public function log_analytics_rest_response( $served, $result, $request, $server ) {
+		$route = $request->get_route();
+		if ( strpos( $route, 'analytics' ) !== false || strpos( $route, 'reports' ) !== false ) {
+			$data = $result->data;
+			$log_entry = date('[Y-m-d H:i:s]') . " REST ROUTE: {$route}\n";
+			$log_entry .= "DATA: " . print_r($data, true) . "\n\n";
+			// Use a separate log file
+			file_put_contents( __DIR__ . '/rest_debug.log', $log_entry, FILE_APPEND );
+		}
+		return $served;
 	}
 }
