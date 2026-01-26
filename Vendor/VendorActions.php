@@ -708,11 +708,17 @@ class VendorActions {
 
 		// Fallback to Shiprocket if no rates found
 		if ( empty( $rates ) ) {
+			error_log( "ZSS DEBUG: BigShip empty/failed. Attempting Shiprocket fallback..." );
+			error_log( "ZSS DEBUG: Origin: $origin_pin, Zones: " . print_r( $zone_pins, true ) );
+			
 			$shiprocket = new \Zerohold\Shipping\Platforms\ShiprocketAdapter();
 			$rates      = $shiprocket->estimateRates( $origin_pin, $zone_pins, $final_slab );
+			
+			error_log( "ZSS DEBUG: Shiprocket Raw Rates: " . print_r( $rates, true ) );
 		}
 
 		if ( empty( $rates ) ) {
+			error_log( "ZSS ERROR: Both BigShip and Shiprocket returned no rates." );
 			wp_send_json_error( 'Unable to fetch estimate right now. Please try again later.' );
 		}
 
