@@ -27,6 +27,10 @@ class DokanStatementIntegration {
 
 		// Hook into Global Earnings filter to ensure dashboard math consistency
 		add_filter( 'dokan_get_seller_earnings', [ $this, 'deduct_shipping_from_global_balance' ], 10, 2 );
+
+		// Hook into Dokan Pro Revenue Report filters
+		add_filter( 'dokan_admin_report_data', [ $this, 'sync_revenue_summary_card' ], 10, 1 );
+		add_filter( 'dokan_admin_report_chart_data', [ $this, 'sync_revenue_chart_and_table' ], 10, 1 );
 	}
 
 	/**
@@ -356,5 +360,87 @@ class DokanStatementIntegration {
 		}
 
 		return $balance;
+	}
+
+	/**
+	 * Sync the "Shipping" summary card in the Dokan Pro Revenue report.
+	 */
+	public function sync_revenue_summary_card( $report_data ) {
+		$vendor_id = isset( $report_data->seller_id ) ? $report_data->seller_id : dokan_get_current_user_id();
+		
+		// In SalesByDate.php, Dokan calculates total_shipping as customer-paid shipping.
+		// We want to ADD our vendor-paid shipping costs to the "Shipping" display card.
+		
+		// Dates from current request if available
+		$start_date = isset( $_GET['start_date_alt'] ) ? sanitize_text_field( $_GET['start_date_alt'] ) : $this->get_start_date( [] );
+		$end_date   = isset( $_GET['end_date_alt'] ) ? sanitize_text_field( $_GET['end_date_alt'] ) : $this->get_end_date( [] );
+
+		$shipping_entries = $this->query_shipping_orders( $vendor_id, $start_date, $end_date );
+		
+		$custom_shipping_total = 0;
+		foreach ( $shipping_entries as $entry ) {
+			$custom_shipping_total += (float) $entry->shipping_cost;
+		}
+
+		if ( $custom_shipping_total > 0 ) {
+			// Add to total_shipping card
+			$report_data->total_shipping += $custom_shipping_total;
+			
+			// Adjust net_sales (Net = Total Sales - Shipping - Taxes)
+			// Since we increased shipping, net sales must decrease.
+			$report_data->net_sales -= $custom_shipping_total;
+			
+			error_log( "ZSS: Updated Revenue summary. Added ₹{$custom_shipping_total} to shipping card." );
+		}
+
+		return $report_data;
+	}
+
+	/**
+	 * Sync the shipping graph line and bottom table rows in Revenue report.
+	 */
+	public function sync_revenue_chart_and_table( $chart_data ) {
+		// $chart_data['shipping_amounts'] contains [ [timestamp, amount], ... ]
+		// We need to inject our daily totals into these arrays.
+		
+		$vendor_id = dokan_get_current_user_id();
+		$start_date = isset( $_GET['start_date_alt'] ) ? sanitize_text_field( $_GET['start_date_alt'] ) : $this->get_start_date( [] );
+		$end_date   = isset( $_GET['end_date_alt'] ) ? sanitize_text_field( $_GET['end_date_alt'] ) : $this->get_end_date( [] );
+
+		$shipping_entries = $this->query_shipping_orders( $vendor_id, $start_date, $end_date );
+		
+		if ( empty( $shipping_entries ) ) {
+			return $chart_data;
+		}
+
+		// Group costs by date (Y-m-d)
+		$daily_costs = [];
+		foreach ( $shipping_entries as $entry ) {
+			$date = date( 'Y-m-d', strtotime( $entry->shipping_date ) );
+			if ( ! isset( $daily_costs[ $date ] ) ) {
+				$daily_costs[ $date ] = 0;
+			}
+			$daily_costs[ $date ] += (float) $entry->shipping_cost;
+		}
+
+		// Update shipping_amounts array
+		if ( isset( $chart_data['shipping_amounts'] ) ) {
+			foreach ( $chart_data['shipping_amounts'] as $key => &$day_point ) {
+				// day_point[0] is timestamp in MS, day_point[1] is amount
+				$point_date = date( 'Y-m-d', $day_point[0] / 1000 );
+				
+				if ( isset( $daily_costs[ $point_date ] ) ) {
+					$amount = $daily_costs[ $point_date ];
+					$day_point[1] += $amount;
+					
+					// Also need to deduct this from net_order_amounts to keep table math correct
+					if ( isset( $chart_data['net_order_amounts'][ $key ] ) ) {
+						$chart_data['net_order_amounts'][ $key ][1] -= $amount;
+					}
+				}
+			}
+		}
+
+		return $chart_data;
 	}
 }
