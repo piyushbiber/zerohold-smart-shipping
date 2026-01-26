@@ -524,7 +524,7 @@ class DokanStatementIntegration {
 	private function query_rejection_penalties( $vendor_id, $start_date, $end_date ) {
 		global $wpdb;
 
-		error_log( "ZSS: Querying rejection penalties for Vendor #{$vendor_id}" );
+		error_log( "ZSS: Querying rejection penalties for Vendor #{$vendor_id} between {$start_date} and {$end_date}" );
 
 		// Query orders with rejection penalty meta (similar to shipping query)
 		$sql = "
@@ -541,14 +541,15 @@ class DokanStatementIntegration {
 			AND DATE(pm3.meta_value) <= %s
 		";
 
-		$all_penalty_entries = $wpdb->get_results( $wpdb->prepare( $sql, $start_date, $end_date ) );
+		$prepared_sql = $wpdb->prepare( $sql, $start_date, $end_date );
+		$all_penalty_entries = $wpdb->get_results( $prepared_sql );
 
 		if ( empty( $all_penalty_entries ) ) {
-			error_log( "ZSS: No rejection penalty meta found in database for these dates." );
+			error_log( "ZSS: No rejection penalty meta found in database. Checked SQL: " . $prepared_sql );
 			return [];
 		}
 
-		error_log( "ZSS: Found " . count( $all_penalty_entries ) . " penalty entries in DB. Filtering by vendor..." );
+		error_log( "ZSS: Raw DB search found " . count( $all_penalty_entries ) . " penalty entries. Now filtering for Vendor #{$vendor_id}..." );
 
 		// Filter by Vendor in PHP (same as shipping)
 		$filtered_results = [];
@@ -558,13 +559,13 @@ class DokanStatementIntegration {
 
 			if ( $order_vendor_id === (int) $vendor_id ) {
 				$filtered_results[] = $entry;
-				error_log( "ZSS: Match! Order #{$order_id} penalty belongs to Vendor #{$vendor_id}" );
+				error_log( "ZSS: SUCCESS Match! Order #{$order_id} belongs to Vendor #{$vendor_id}" );
 			} else {
-				error_log( "ZSS: Skipping! Order #{$order_id} penalty belongs to Vendor #{$order_vendor_id}" );
+				error_log( "ZSS: MISMATCH! Order #{$order_id} belongs to Vendor #{$order_vendor_id} (Expected #{$vendor_id})" );
 			}
 		}
 
-		error_log( "ZSS: Final penalty count for statement: " . count( $filtered_results ) );
+		error_log( "ZSS: Final filtered penalty count: " . count( $filtered_results ) );
 
 		return $filtered_results;
 	}
