@@ -96,53 +96,50 @@ class DokanStatementIntegration {
 		}
 		unset( $dokan_entry ); // Break reference
 		
-		// STEP 3: Handle REFUNDS (Rejection Penalty Logic)
-		// When vendor rejects order: Deduct order amount + 25% penalty = 125% total
-		$refunded_orders = $this->query_refunded_orders( $vendor_id, $start_date, $end_date );
-		$new_refund_entries = [];
+		// STEP 3: Handle REJECTION PENALTIES (Following Shipping Pattern)
+		// Query rejection penalties from order meta (like shipping charges)
+		$penalty_orders = $this->query_rejection_penalties( $vendor_id, $start_date, $end_date );
+		$penalty_entries = [];
 
-		if ( ! empty( $refunded_orders ) ) {
-			foreach ( $refunded_orders as $refund ) {
-				if ( in_array( (int) $refund->order_id, $existing_refund_ids, true ) ) {
-					continue; // Already exists in statement
-				}
+		if ( ! empty( $penalty_orders ) ) {
+			foreach ( $penalty_orders as $penalty ) {
+				$order_id = (int) $penalty->order_id;
+				$penalty_amount = (float) $penalty->penalty_amount;
+				$total_deduction = (float) $penalty->total_deduction;
+				$penalty_date = $penalty->penalty_date;
+				$order_amount = $total_deduction - $penalty_amount; // Reverse calculate
 
-				// Calculate 125% deduction (100% refund + 25% penalty)
-				$order_amount = (float) $refund->order_total;
-				$penalty_amount = $order_amount * 0.25; // 25% penalty
-				$total_deduction = $order_amount + $penalty_amount; // 125%
-
-				// Transform to Dokan Entry
-				$new_refund_entries[] = [
-					'id'           => 'ZH-REF-' . $refund->order_id,
+				// Build Dokan entry
+				$penalty_entries[] = [
+					'id'           => 'ZH-PENALTY-' . $order_id,
 					'vendor_id'    => $vendor_id,
-					'trn_id'       => $refund->order_id,
-					'trn_type'     => 'dokan_refund',
+					'trn_id'       => $order_id,
+					'trn_type'     => 'zh_rejection_penalty',
 					'perticulars'  => sprintf( 
 						__( 'Order Return + Penalty for Order #%d (₹%s order + ₹%s penalty)', 'zerohold-shipping' ), 
-						$refund->order_id,
+						$order_id,
 						number_format( $order_amount, 2 ),
 						number_format( $penalty_amount, 2 )
 					),
 					'debit'        => 0,
 					'credit'       => $total_deduction, // Deduct 125%
 					'status'       => 'approved',
-					'trn_date'     => $refund->refund_date,
-					'balance_date' => $refund->refund_date,
+					'trn_date'     => $penalty_date,
+					'balance_date' => $penalty_date,
 					'balance'      => 0, // Recalculated later
 					'trn_title'    => __( 'Order Return + Penalty', 'zerohold-shipping' ),
-					'url'          => $this->get_order_url( $refund->order_id ),
+					'url'          => $this->get_order_url( $order_id ),
 				];
 				
-				error_log( "ZSS: Injected rejection penalty for Order #{$refund->order_id} (-₹{$total_deduction}: ₹{$order_amount} + ₹{$penalty_amount} penalty)" );
+				error_log( "ZSS: Injected rejection penalty for Order #{$order_id} (-₹{$total_deduction}: ₹{$order_amount} + ₹{$penalty_amount} penalty)" );
 			}
 		}
 
 		// STEP 4: Transform shipping data to Dokan format
 		$transformed_shipping = $this->transform_orders_to_dokan( $shipping_orders, $vendor_id );
 
-		// STEP 5: Merge all entries (Original + Shipping + Refunds)
-		$merged_entries = array_merge( $filtered_entries, $transformed_shipping, $new_refund_entries );
+		// STEP 5: Merge all entries (Original + Shipping + Penalties)
+		$merged_entries = array_merge( $filtered_entries, $transformed_shipping, $penalty_entries );
 
 		// STEP 6: Sort by balance_date
 		usort( $merged_entries, function( $a, $b ) {
@@ -153,11 +150,11 @@ class DokanStatementIntegration {
 		$final_entries = $this->recalculate_balance( $merged_entries );
 
 		error_log( sprintf( 
-			"ZSS: Final statement - Total: %d (Dokan: %d, Shipping: %d, Refunds: %d)", 
+			"ZSS: Final statement - Total: %d (Dokan: %d, Shipping: %d, Penalties: %d)", 
 			count( $final_entries ),
 			count( $filtered_entries ),
 			count( $transformed_shipping ),
-			count( $new_refund_entries )
+			count( $penalty_entries )
 		) );
 
 		return $final_entries;
@@ -364,22 +361,22 @@ class DokanStatementIntegration {
 			$total_shipping_cost += (float) $entry->shipping_cost;
 		}
 
-		// 2. REFUNDS
-		$refunded_orders = $this->query_refunded_orders( $vendor_id, $start_date, $end_date );
-		$total_refunds = 0;
-		foreach ( $refunded_orders as $refund ) {
-			$total_refunds += (float) $refund->order_total;
+		// 2. REJECTION PENALTIES
+		$penalty_entries = $this->query_rejection_penalties( $vendor_id, $start_date, $end_date );
+		$total_penalties = 0;
+		foreach ( $penalty_entries as $penalty ) {
+			$total_penalties += (float) $penalty->total_deduction;
 		}
 
 		// Apply Adjustments
-		if ( $total_shipping_cost > 0 || $total_refunds > 0 ) {
-			error_log( "ZSS: Adjusting summary cards. Shipping: ₹{$total_shipping_cost}, Refunds: ₹{$total_refunds}" );
+		if ( $total_shipping_cost > 0 || $total_penalties > 0 ) {
+			error_log( "ZSS: Adjusting summary cards. Shipping: ₹{$total_shipping_cost}, Penalties: ₹{$total_penalties}" );
 			
 			// Total Credit INCREASES (deductions)
-			$summary_data['total_credit'] += ( $total_shipping_cost + $total_refunds );
+			$summary_data['total_credit'] += ( $total_shipping_cost + $total_penalties );
 			
 			// Balance matches individual entries recalculation
-			$summary_data['balance'] -= ( $total_shipping_cost + $total_refunds );
+			$summary_data['balance'] -= ( $total_shipping_cost + $total_penalties );
 		}
 
 		return $summary_data;
@@ -520,37 +517,55 @@ class DokanStatementIntegration {
 	}
 
 	/**
-	 * Query refunded orders for this vendor.
+	 * Query rejection penalties from order meta (following shipping pattern).
 	 * 
-	 * @return array Objects with order_id, order_total, refund_date
+	 * @return array Objects with order_id, penalty_amount, total_deduction, penalty_date
 	 */
-	private function query_refunded_orders( $vendor_id, $start_date, $end_date ) {
+	private function query_rejection_penalties( $vendor_id, $start_date, $end_date ) {
 		global $wpdb;
 
-		// Fetch orders where status is 'wc-refunded' and vendor ID matches
-		// We use post_modified as the refund date
+		error_log( "ZSS: Querying rejection penalties for Vendor #{$vendor_id}" );
+
+		// Query orders with rejection penalty meta (similar to shipping query)
 		$sql = "
 			SELECT 
-				p.ID as order_id,
-				pm_total.meta_value as order_total,
-				p.post_modified as refund_date,
-				'refund' as type
-			FROM {$wpdb->posts} p
-			INNER JOIN {$wpdb->postmeta} pm_total ON p.ID = pm_total.post_id AND pm_total.meta_key = '_order_total'
-			INNER JOIN {$wpdb->postmeta} pm_vendor ON p.ID = pm_vendor.post_id AND pm_vendor.meta_key = '_dokan_vendor_id'
-			WHERE p.post_type = 'shop_order'
-			AND p.post_status = 'wc-refunded'
-			AND pm_vendor.meta_value = %d
-			AND DATE(p.post_modified) >= %s
-			AND DATE(p.post_modified) <= %s
+				pm1.post_id as order_id,
+				pm1.meta_value as penalty_amount,
+				pm2.meta_value as total_deduction,
+				pm3.meta_value as penalty_date
+			FROM {$wpdb->postmeta} pm1
+			INNER JOIN {$wpdb->postmeta} pm2 ON pm1.post_id = pm2.post_id AND pm2.meta_key = '_zh_rejection_total'
+			INNER JOIN {$wpdb->postmeta} pm3 ON pm1.post_id = pm3.post_id AND pm3.meta_key = '_zh_rejection_date'
+			WHERE pm1.meta_key = '_zh_rejection_penalty'
+			AND DATE(pm3.meta_value) >= %s
+			AND DATE(pm3.meta_value) <= %s
 		";
 
-		$results = $wpdb->get_results( $wpdb->prepare( $sql, $vendor_id, $start_date, $end_date ) );
+		$all_penalty_entries = $wpdb->get_results( $wpdb->prepare( $sql, $start_date, $end_date ) );
 
-		if ( ! empty( $results ) ) {
-			error_log( "ZSS: Found " . count( $results ) . " refunded orders for Vendor #{$vendor_id}" );
+		if ( empty( $all_penalty_entries ) ) {
+			error_log( "ZSS: No rejection penalty meta found in database for these dates." );
+			return [];
 		}
 
-		return $results;
+		error_log( "ZSS: Found " . count( $all_penalty_entries ) . " penalty entries in DB. Filtering by vendor..." );
+
+		// Filter by Vendor in PHP (same as shipping)
+		$filtered_results = [];
+		foreach ( $all_penalty_entries as $entry ) {
+			$order_id = (int) $entry->order_id;
+			$order_vendor_id = function_exists( 'dokan_get_seller_id_by_order' ) ? (int) dokan_get_seller_id_by_order( $order_id ) : (int) get_post_meta( $order_id, '_dokan_vendor_id', true );
+
+			if ( $order_vendor_id === (int) $vendor_id ) {
+				$filtered_results[] = $entry;
+				error_log( "ZSS: Match! Order #{$order_id} penalty belongs to Vendor #{$vendor_id}" );
+			} else {
+				error_log( "ZSS: Skipping! Order #{$order_id} penalty belongs to Vendor #{$order_vendor_id}" );
+			}
+		}
+
+		error_log( "ZSS: Final penalty count for statement: " . count( $filtered_results ) );
+
+		return $filtered_results;
 	}
 }
