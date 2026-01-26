@@ -123,44 +123,59 @@ class DokanStatementIntegration {
 	private function query_shipping_orders( $vendor_id, $start_date, $end_date ) {
 		global $wpdb;
 
-		error_log( "ZSS DEBUG: Current Logic - Statement Vendor: {$vendor_id} | Logged In User: " . get_current_user_id() );
+		error_log( "ZSS: Starting statement query for Vendor #{$vendor_id} ($start_date to $end_date)" );
 
-		// DIAGNOSTIC: Look at the 5 rows found in postmeta
-		$raw_rows = $wpdb->get_results( "SELECT post_id, meta_value FROM {$wpdb->postmeta} WHERE meta_key = '_zh_shipping_cost' LIMIT 5" );
-		foreach ( $raw_rows as $row ) {
-			$dokan_v_id = function_exists('dokan_get_seller_id_by_order') ? dokan_get_seller_id_by_order($row->post_id) : 'N/A';
-			$author = $wpdb->get_var( $wpdb->prepare( "SELECT post_author FROM {$wpdb->posts} WHERE ID = %d", $row->post_id ) );
-			$date = get_post_meta( $row->post_id, '_zh_shipping_date', true );
-			error_log( "ZSS DIAGNOSTIC: Order #{$row->post_id} | Cost: {$row->meta_value} | Date: {$date} | Dokan Seller ID: '{$dokan_v_id}' | Post Author: '{$author}'" );
-		}
-
-		// Query orders that have shipping cost meta
-		// We join with postmeta for cost and date, and filter vendor by post_author OR meta
+		// 1. Get ALL orders that have a shipping cost recorded within the date range
+		// We query postmeta directly for the cost and date.
 		$sql = "
-			SELECT DISTINCT
+			SELECT 
 				pm1.post_id as order_id,
 				pm1.meta_value as shipping_cost,
 				pm2.meta_value as shipping_date
 			FROM {$wpdb->postmeta} pm1
 			INNER JOIN {$wpdb->postmeta} pm2 ON pm1.post_id = pm2.post_id AND pm2.meta_key = '_zh_shipping_date'
-			INNER JOIN {$wpdb->posts} p ON pm1.post_id = p.ID
-			LEFT JOIN {$wpdb->postmeta} pm3 ON pm1.post_id = pm3.post_id AND pm3.meta_key = '_dokan_vendor_id'
 			WHERE pm1.meta_key = '_zh_shipping_cost'
-			AND ( pm3.meta_value = %d OR p.post_author = %d OR %d = 0 )
 			AND DATE(pm2.meta_value) >= %s
 			AND DATE(pm2.meta_value) <= %s
 			ORDER BY pm2.meta_value ASC
 		";
 
-		// If we are debugging as admin (vendor_id might be 0 in some contexts), we might want to see all
-		$prepared_sql = $wpdb->prepare( $sql, $vendor_id, $vendor_id, $vendor_id, $start_date, $end_date );
-		error_log( "ZSS: Executing query for Vendor {$vendor_id}" );
-
-		$results = $wpdb->get_results( $prepared_sql );
+		$all_shipping_entries = $wpdb->get_results( $wpdb->prepare( $sql, $start_date, $end_date ) );
 		
-		error_log( "ZSS: Query found " . count( $results ) . " shipping charges" );
+		if ( empty( $all_shipping_entries ) ) {
+			error_log( "ZSS: No shipping cost meta found in database for these dates." );
+			return [];
+		}
 
-		return $results;
+		error_log( "ZSS: Found " . count( $all_shipping_entries ) . " total shipping entries in DB for this date range. Filtering by vendor..." );
+
+		// 2. Filter by Vendor in PHP using Dokan's native logic
+		// This is 100% reliable even with HPOS or custom vendor logic
+		$filtered_results = [];
+		foreach ( $all_shipping_entries as $entry ) {
+			$order_id = (int) $entry->order_id;
+			
+			// Detect seller using Dokan logic
+			$order_vendor_id = 0;
+			if ( function_exists( 'dokan_get_seller_id_by_order' ) ) {
+				$order_vendor_id = (int) dokan_get_seller_id_by_order( $order_id );
+			} else {
+				$order_vendor_id = (int) get_post_meta( $order_id, '_dokan_vendor_id', true );
+			}
+
+			// Special case: if we are viewing as admin (vendor_id = 0), we might show nothing or everything.
+			// But usually Dokan passes a specific vendor ID here.
+			if ( $order_vendor_id === (int) $vendor_id ) {
+				$filtered_results[] = $entry;
+				error_log( "ZSS: Match! Order #{$order_id} belongs to Vendor #{$vendor_id}" );
+			} else {
+				error_log( "ZSS: Skipping! Order #{$order_id} belongs to Vendor #{$order_vendor_id}" );
+			}
+		}
+
+		error_log( "ZSS: Final count for statement: " . count( $filtered_results ) );
+
+		return $filtered_results;
 	}
 
 	/**
