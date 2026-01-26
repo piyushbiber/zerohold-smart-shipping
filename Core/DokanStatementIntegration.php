@@ -63,6 +63,14 @@ class DokanStatementIntegration {
 		// STEP 1: Keep Dokan entries and prepare for modification
 		$filtered_entries = $entries; 
 
+		// Track existing refunds to avoid double counting
+		$existing_refund_ids = [];
+		foreach ( $filtered_entries as $entry ) {
+			if ( $entry['trn_type'] === 'dokan_refund' || strpos( $entry['trn_type'], 'refund' ) !== false ) {
+				$existing_refund_ids[] = (int) $entry['trn_id'];
+			}
+		}
+
 		// STEP 2: Query orders with shipping charges from meta
 		$shipping_orders = $this->query_shipping_orders( $vendor_id, $start_date, $end_date );
 
@@ -88,40 +96,58 @@ class DokanStatementIntegration {
 		}
 		unset( $dokan_entry ); // Break reference
 		
-		// Debug: Log the shipping orders
-		if ( ! empty( $shipping_orders ) ) {
-			foreach ( $shipping_orders as $idx => $order ) {
-				error_log( sprintf(
-					"ZSS: Shipping Entry #%d - Order: %d, Cost: %s, Date: %s",
-					$idx,
-					$order->order_id,
-					$order->shipping_cost,
-					$order->shipping_date
-				) );
+		// STEP 3: Handle REFUNDS (Fix for Missing Deductions)
+		// Query fully refunded orders (Status: wc-refunded) that aren't already in the statement
+		$refunded_orders = $this->query_refunded_orders( $vendor_id, $start_date, $end_date );
+		$new_refund_entries = [];
+
+		if ( ! empty( $refunded_orders ) ) {
+			foreach ( $refunded_orders as $refund ) {
+				if ( in_array( (int) $refund->order_id, $existing_refund_ids, true ) ) {
+					continue; // Already exists in statement
+				}
+
+				// Transform to Dokan Entry
+				$new_refund_entries[] = [
+					'id'           => 'ZH-REF-' . $refund->order_id,
+					'vendor_id'    => $vendor_id,
+					'trn_id'       => $refund->order_id,
+					'trn_type'     => 'dokan_refund', // Standard type
+					'perticulars'  => sprintf( __( 'Refund for Order #%d', 'zerohold-shipping' ), $refund->order_id ),
+					'debit'        => 0,
+					'credit'       => (float) $refund->order_total, // Deduct from balance
+					'status'       => 'approved',
+					'trn_date'     => $refund->refund_date,
+					'balance_date' => $refund->refund_date,
+					'balance'      => 0, // Recalculated later
+					'trn_title'    => __( 'Order Refund', 'zerohold-shipping' ),
+					'url'          => $this->get_order_url( $refund->order_id ),
+				];
+				
+				error_log( "ZSS: Injected missing refund for Order #{$refund->order_id} (-{$refund->order_total})" );
 			}
-		} else {
-			error_log( "ZSS: No shipping charges found. Query params - Vendor: {$vendor_id}, Start: {$start_date}, End: {$end_date}" );
 		}
 
-		// STEP 3: Transform order data to Dokan format
-		$transformed_entries = $this->transform_orders_to_dokan( $shipping_orders, $vendor_id );
+		// STEP 4: Transform shipping data to Dokan format
+		$transformed_shipping = $this->transform_orders_to_dokan( $shipping_orders, $vendor_id );
 
-		// STEP 4: Merge arrays
-		$merged_entries = array_merge( $filtered_entries, $transformed_entries );
+		// STEP 5: Merge all entries (Original + Shipping + Refunds)
+		$merged_entries = array_merge( $filtered_entries, $transformed_shipping, $new_refund_entries );
 
-		// STEP 5: Sort by balance_date
+		// STEP 6: Sort by balance_date
 		usort( $merged_entries, function( $a, $b ) {
 			return strtotime( $a['balance_date'] ) - strtotime( $b['balance_date'] );
 		});
 
-		// STEP 6: Recalculate running balance
+		// STEP 7: Recalculate running balance
 		$final_entries = $this->recalculate_balance( $merged_entries );
 
 		error_log( sprintf( 
-			"ZSS: Final statement - Total entries: %d (Dokan: %d, Shipping: %d)", 
+			"ZSS: Final statement - Total: %d (Dokan: %d, Shipping: %d, Refunds: %d)", 
 			count( $final_entries ),
 			count( $filtered_entries ),
-			count( $transformed_entries )
+			count( $transformed_shipping ),
+			count( $new_refund_entries )
 		) );
 
 		return $final_entries;
@@ -315,31 +341,35 @@ class DokanStatementIntegration {
 	 */
 	public function sync_summary_cards( $summary_data, $results, $opening_balance ) {
 		// Use the same date range and vendor from context if possible
-		// Since we don't have $args here directly, we try to extract from current request
 		$start_date = isset( $_GET['start_date'] ) ? sanitize_text_field( $_GET['start_date'] ) : $this->get_start_date( [] );
 		$end_date   = isset( $_GET['end_date'] ) ? sanitize_text_field( $_GET['end_date'] ) : $this->get_end_date( [] );
 		$vendor_id  = dokan_get_current_user_id();
 
 		error_log( "ZSS: Syncing summary cards for Vendor #{$vendor_id} ($start_date to $end_date)" );
 
-		// Query our charges
+		// 1. SHIPPING CHARGES
 		$shipping_entries = $this->query_shipping_orders( $vendor_id, $start_date, $end_date );
-		
 		$total_shipping_cost = 0;
 		foreach ( $shipping_entries as $entry ) {
 			$total_shipping_cost += (float) $entry->shipping_cost;
 		}
 
-		if ( $total_shipping_cost > 0 ) {
-			error_log( "ZSS: Adjusting summary cards. Total shipping: ₹{$total_shipping_cost}" );
+		// 2. REFUNDS
+		$refunded_orders = $this->query_refunded_orders( $vendor_id, $start_date, $end_date );
+		$total_refunds = 0;
+		foreach ( $refunded_orders as $refund ) {
+			$total_refunds += (float) $refund->order_total;
+		}
+
+		// Apply Adjustments
+		if ( $total_shipping_cost > 0 || $total_refunds > 0 ) {
+			error_log( "ZSS: Adjusting summary cards. Shipping: ₹{$total_shipping_cost}, Refunds: ₹{$total_refunds}" );
 			
-			// Total Debit remains SAME (shipping is not an earning)
-			// Total Credit INCREASES (shipping is a deduction)
-			$summary_data['total_credit'] += $total_shipping_cost;
+			// Total Credit INCREASES (deductions)
+			$summary_data['total_credit'] += ( $total_shipping_cost + $total_refunds );
 			
-			// Balance matches individual entries recalculation: 
-			// Balance = Opening + Total Debit - Total Credit
-			$summary_data['balance'] -= $total_shipping_cost;
+			// Balance matches individual entries recalculation
+			$summary_data['balance'] -= ( $total_shipping_cost + $total_refunds );
 		}
 
 		return $summary_data;
@@ -477,5 +507,40 @@ class DokanStatementIntegration {
 
 		$response->set_data( $data );
 		return $response;
+	}
+
+	/**
+	 * Query refunded orders for this vendor.
+	 * 
+	 * @return array Objects with order_id, order_total, refund_date
+	 */
+	private function query_refunded_orders( $vendor_id, $start_date, $end_date ) {
+		global $wpdb;
+
+		// Fetch orders where status is 'wc-refunded' and vendor ID matches
+		// We use post_modified as the refund date
+		$sql = "
+			SELECT 
+				p.ID as order_id,
+				pm_total.meta_value as order_total,
+				p.post_modified as refund_date,
+				'refund' as type
+			FROM {$wpdb->posts} p
+			INNER JOIN {$wpdb->postmeta} pm_total ON p.ID = pm_total.post_id AND pm_total.meta_key = '_order_total'
+			INNER JOIN {$wpdb->postmeta} pm_vendor ON p.ID = pm_vendor.post_id AND pm_vendor.meta_key = '_dokan_vendor_id'
+			WHERE p.post_type = 'shop_order'
+			AND p.post_status = 'wc-refunded'
+			AND pm_vendor.meta_value = %d
+			AND DATE(p.post_modified) >= %s
+			AND DATE(p.post_modified) <= %s
+		";
+
+		$results = $wpdb->get_results( $wpdb->prepare( $sql, $vendor_id, $start_date, $end_date ) );
+
+		if ( ! empty( $results ) ) {
+			error_log( "ZSS: Found " . count( $results ) . " refunded orders for Vendor #{$vendor_id}" );
+		}
+
+		return $results;
 	}
 }
