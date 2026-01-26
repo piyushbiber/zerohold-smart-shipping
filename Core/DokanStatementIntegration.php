@@ -453,7 +453,7 @@ class DokanStatementIntegration {
 
 	public function log_analytics_rest_response( $served, $result, $request, $server ) {
 		$route = $request->get_route();
-		if ( strpos( $route, 'analytics' ) !== false || strpos( $route, 'reports' ) !== false ) {
+		if ( strpos( $route, 'analytics' ) !== false || strpos( $route, 'reports' ) !== false || strpos( $route, 'vendor-dashboard' ) !== false ) {
 			$data = $result->data;
 			$log_entry = date('[Y-m-d H:i:s]') . " REST ROUTE: {$route}\n";
 			$log_entry .= "DATA: " . print_r($data, true) . "\n\n";
