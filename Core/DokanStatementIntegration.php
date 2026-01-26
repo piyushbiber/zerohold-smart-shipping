@@ -174,6 +174,9 @@ class DokanStatementIntegration {
 	 * Extract start date from entries or use current month start.
 	 */
 	private function get_start_date( $entries ) {
+		if ( isset( $_GET['start_date'] ) && ! empty( $_GET['start_date'] ) ) {
+			return sanitize_text_field( $_GET['start_date'] );
+		}
 		return dokan_current_datetime()->modify( 'first day of this month' )->format( 'Y-m-d' );
 	}
 
@@ -181,6 +184,9 @@ class DokanStatementIntegration {
 	 * Extract end date from entries or use current date.
 	 */
 	private function get_end_date( $entries ) {
+		if ( isset( $_GET['end_date'] ) && ! empty( $_GET['end_date'] ) ) {
+			return sanitize_text_field( $_GET['end_date'] );
+		}
 		return dokan_current_datetime()->format( 'Y-m-d' );
 	}
 
@@ -347,10 +353,25 @@ class DokanStatementIntegration {
 	 * @return array Modified summary data
 	 */
 	public function sync_summary_cards( $summary_data, $results, $opening_balance ) {
-		// Use the same date range and vendor from context if possible
-		$start_date = isset( $_GET['start_date'] ) ? sanitize_text_field( $_GET['start_date'] ) : $this->get_start_date( [] );
-		$end_date   = isset( $_GET['end_date'] ) ? sanitize_text_field( $_GET['end_date'] ) : $this->get_end_date( [] );
-		$vendor_id  = dokan_get_current_user_id();
+		// Use the same date range and vendor from context
+		$start_date = $this->get_start_date( [] );
+		$end_date   = $this->get_end_date( [] );
+		
+		// For the vendor ID, attempt to get it from the results first (important for admin view)
+		$vendor_id = 0;
+		if ( ! empty( $results ) ) {
+			// Extract vendor ID from the first result if available
+			foreach ( $results as $res ) {
+				if ( isset( $res->vendor_id ) ) {
+					$vendor_id = (int) $res->vendor_id;
+					break;
+				}
+			}
+		}
+		
+		if ( ! $vendor_id ) {
+			$vendor_id = dokan_get_current_user_id();
+		}
 
 		error_log( "ZSS: Syncing summary cards for Vendor #{$vendor_id} ($start_date to $end_date)" );
 
