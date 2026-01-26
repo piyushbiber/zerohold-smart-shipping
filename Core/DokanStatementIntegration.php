@@ -21,6 +21,9 @@ class DokanStatementIntegration {
 		
 		// Hook into Dokan Summary filter to sync top cards
 		add_filter( 'dokan_report_statement_summary', [ $this, 'sync_summary_cards' ], 10, 3 );
+
+		// Hook into Global Balance filter to sync withdrawal page and other areas
+		add_filter( 'dokan_get_seller_balance', [ $this, 'deduct_shipping_from_global_balance' ], 10, 2 );
 	}
 
 	/**
@@ -310,5 +313,45 @@ class DokanStatementIntegration {
 		}
 
 		return $summary_data;
+	}
+
+	/**
+	 * Deduct shipping charges from the global vendor balance.
+	 * This ensures consistency across the Withdrawal page, Dashboard cards, and validation logic.
+	 * 
+	 * @param float $balance    The original balance calculated by Dokan
+	 * @param int   $vendor_id  The vendor ID
+	 * 
+	 * @return float Adjusted balance
+	 */
+	public function deduct_shipping_from_global_balance( $balance, $vendor_id ) {
+		// Avoid infinite loops if this is called recursively (though unlikely with this filter)
+		static $is_calculating = false;
+		if ( $is_calculating ) {
+			return $balance;
+		}
+		$is_calculating = true;
+
+		// We need to query ALL shipping charges for this vendor, not just for a date range,
+		// because 'balance' is a lifetime value in Dokan.
+		// However, query_shipping_orders requires dates. We'll use a very wide range.
+		$start_date = '2000-01-01';
+		$end_date   = '2100-12-31';
+
+		$shipping_entries = $this->query_shipping_orders( $vendor_id, $start_date, $end_date );
+		
+		$total_shipping_cost = 0;
+		foreach ( $shipping_entries as $entry ) {
+			$total_shipping_cost += (float) $entry->shipping_cost;
+		}
+
+		$is_calculating = false;
+
+		if ( $total_shipping_cost > 0 ) {
+			error_log( "ZSS: Deducting ₹{$total_shipping_cost} from global balance for Vendor #{$vendor_id}" );
+			return $balance - $total_shipping_cost;
+		}
+
+		return $balance;
 	}
 }
