@@ -362,10 +362,21 @@ class VendorActions {
 						update_post_meta( $order_id, '_zh_shipping_cost', $vendor_share_final );
 						// Removed duplicate overwrite line
 						update_post_meta( $order_id, '_zh_shipping_date', current_time( 'mysql' ) );
+
+						// Comprehensive Debug Log
+						error_log( "ZSS DEBUG: Shipping Calculation Breakdown for Order #{$order_id}" );
+						error_log( "------------------------------------------------------------" );
+						error_log( "  > Selected Courier: " . ( isset( $winner->courier_name ) ? $winner->courier_name : 'Unknown' ) . " ({$winner_platform})" );
+						error_log( "  > Cheapest Price:   ₹{$total_cost}" );
+						error_log( "  > Vendor Share %:   {$share_percent}%" );
+						error_log( "  > Base Share:       ₹{$vendor_share_base} ({$total_cost} * {$share_percent}%)" );
+						error_log( "  > Hidden Cap:       ₹{$cap_amount}" );
+						error_log( "  > FINAL DEDUCTION:  ₹{$vendor_share_final}" );
+						error_log( "------------------------------------------------------------" );
+
 						if ( $cap_amount > 0 ) {
 							error_log( "ZSS: Applied Hidden Cap of ₹{$cap_amount} to Vendor #{$vendor_id}" );
 						}
-						error_log( "ZSS: Stored forward shipping cost ₹{$vendor_share_final} ({$share_percent}%% of ₹{$total_cost} + Cap) in order meta for Order #{$order_id}" );
 
 						error_log( "ZSS: Stored forward shipping cost ₹{$vendor_share_final} ({$share_percent}%% of ₹{$total_cost} + Cap) in order meta for Order #{$order_id}" );
 
@@ -867,7 +878,8 @@ class VendorActions {
 
 			if ( $base_share >= $min && $base_share < $max ) {
 				$cap = $base_share * ( $pct / 100 );
-				// error_log( "ZSS CAP: Share {$base_share} falls in slab {$min}-{$max} ({$pct}%). Extra: {$cap}" );
+				error_log( "ZSS CAP: Matched Slab [Min: {$min}, Max: " . ($max == PHP_FLOAT_MAX ? 'INF' : $max) . "] with {$pct}% Cap." );
+				error_log( "ZSS CAP: Calculated Extra = ₹{$cap} (on Base Share ₹{$base_share})" );
 				return $cap;
 			}
 		}
