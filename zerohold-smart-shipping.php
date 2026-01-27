@@ -104,6 +104,27 @@ class ZeroHoldSmartShipping {
 
 		// Register Refund Cleanup Hook
 		add_action( 'woocommerce_order_status_refunded', [ $this, 'cleanup_on_refund' ], 10, 1 );
+
+		// Register Shipping Method
+		add_filter( 'woocommerce_shipping_methods', [ $this, 'register_shipping_method' ] );
+		add_action( 'woocommerce_shipping_init', [ $this, 'init_shipping_method' ] );
+	}
+
+	/**
+	 * Register the shipping method class.
+	 */
+	public function register_shipping_method( $methods ) {
+		$methods['zerohold_shipping'] = \Zerohold\Shipping\Frontend\ZSS_Shipping_Method::class;
+		return $methods;
+	}
+
+	/**
+	 * Initialize the shipping method class.
+	 */
+	public function init_shipping_method() {
+		if ( class_exists( 'WC_Shipping_Method' ) ) {
+			require_once __DIR__ . '/Frontend/ZSS_Shipping_Method.php';
+		}
 	}
 
 	/**

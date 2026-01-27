@@ -115,7 +115,7 @@ class ShiprocketAdapter implements PlatformInterface {
 		);
 		
 
-		return [ 'shiprocket' => $quote ];
+		return [ 'shiprocket' => [ $quote ] ];
 	}
 
 	public function generateAWB( $shipment_id ) {

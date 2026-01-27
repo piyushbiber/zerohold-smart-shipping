@@ -151,7 +151,7 @@ class BigShipAdapter implements PlatformInterface {
 
             'order_detail' => [
                 'invoice_date' => gmdate( 'Y-m-d\TH:i:s.000\Z' ), // UTC Format
-                'invoice_id'   => (string) $shipment->order_id,
+                'invoice_id'   => $shipment->order_id ? (string) $shipment->order_id : 'TEMP-' . time() . '-' . rand(100, 999),
                 'payment_type' => $payment_type,
                 'shipment_invoice_amount'  => (float) $shipment->declared_value,
                 'total_collectable_amount' => 0, // Prepaid = 0
@@ -224,8 +224,10 @@ class BigShipAdapter implements PlatformInterface {
 			return [];
 		}
 	
-	// Store system_order_id for later use in createOrder
-	update_post_meta( $shipment->order_id, '_zh_bigship_system_order_id', $system_order_id );
+	// Store system_order_id for later use in createOrder (only if order exists)
+	if ( ! empty( $shipment->order_id ) ) {
+		update_post_meta( $shipment->order_id, '_zh_bigship_system_order_id', $system_order_id );
+	}
 
 		// 2. Fetch Rates
 		// GET /api/order/shipping/rates?shipment_category=B2C&system_order_id=...
