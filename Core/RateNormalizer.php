@@ -39,15 +39,21 @@ class RateNormalizer {
 		$winner      = null;
 
 		foreach ( $couriers as $courier ) {
-			$rate = isset( $courier['freight_charge'] ) ? floatval( $courier['freight_charge'] ) : ( isset( $courier['rate'] ) ? floatval( $courier['rate'] ) : 0 );
+			// Phase-8: Use Total Rate (incl tax/fuel) instead of Base Freight
+			// 'rate' is typically the total charge. 'freight_charge' is base.
+			$total_rate = isset( $courier['rate'] ) ? floatval( $courier['rate'] ) : 0;
+			$base_freight = isset( $courier['freight_charge'] ) ? floatval( $courier['freight_charge'] ) : 0;
 			
+			// Use total rate if available, else base
+			$final_rate = ( $total_rate > 0 ) ? $total_rate : $base_freight;
+
 			// Phase-7: Reject Zero Rates
-			if ( $rate <= 0 ) {
+			if ( $final_rate <= 0 ) {
 				continue;
 			}
 
-			if ( is_null( $lowest_rate ) || $rate < $lowest_rate ) {
-				$lowest_rate = $rate;
+			if ( is_null( $lowest_rate ) || $final_rate < $lowest_rate ) {
+				$lowest_rate = $final_rate;
 				$winner      = $courier;
 			}
 		}

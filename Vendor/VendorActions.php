@@ -383,7 +383,7 @@ class VendorActions {
 						error_log( "ZSS DEBUG: Shipping Calculation Breakdown for Order #{$order_id}" );
 						error_log( "------------------------------------------------------------" );
 						error_log( "  > Selected Courier: " . ( isset( $winner->courier_name ) ? $winner->courier_name : 'Unknown' ) . " ({$winner_platform})" );
-						error_log( "  > Cheapest Price:   ₹{$total_cost}" );
+						error_log( "  > Source Cost:      ₹{$total_cost} (from Rate Quote)" );
 						error_log( "  > Vendor Share %:   {$share_percent}%" );
 						error_log( "  > Base Share:       ₹{$vendor_share_base} ({$total_cost} * {$share_percent}%)" );
 						error_log( "  > Hidden Cap:       ₹{$cap_amount}" );
