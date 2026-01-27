@@ -367,8 +367,10 @@ class VendorActions {
 						}
 						error_log( "ZSS: Stored forward shipping cost ₹{$vendor_share_final} ({$share_percent}%% of ₹{$total_cost} + Cap) in order meta for Order #{$order_id}" );
 
-						// Step 2.6.7: Mirror Shipping Cost to Order Item for Analytics (Transaction-Time Mirroring)
-						$this->inject_shipping_line_item( $order_id, $vendor_share_final );
+						error_log( "ZSS: Stored forward shipping cost ₹{$vendor_share_final} ({$share_percent}%% of ₹{$total_cost} + Cap) in order meta for Order #{$order_id}" );
+
+						// Step 2.6.7: INJECTION REMOVED to prevent altering Order Total for Buyer
+						// $this->inject_shipping_line_item( $order_id, $vendor_share_final );
 					}
 
                     // BigShip Specific Storage
