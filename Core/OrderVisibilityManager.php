@@ -17,10 +17,14 @@ class OrderVisibilityManager {
 
 	public function __construct() {
 		// 1. Initialize visibility meta on order creation
-		add_action( 'woocommerce_checkout_order_processed', [ $this, 'initialize_visibility' ], 20, 3 );
+		add_action( 'woocommerce_new_order', [ $this, 'initialize_visibility_new' ], 20, 2 );
+		add_action( 'woocommerce_checkout_order_processed', [ $this, 'initialize_visibility_new' ], 20, 1 );
+		add_action( 'dokan_checkout_update_order_meta', [ $this, 'initialize_visibility_new' ], 20, 1 );
+		add_action( 'dokan_checkout_update_sub_order_meta', [ $this, 'initialize_visibility_new' ], 20, 1 );
 
 		// 2. Filter Dokan order queries to hide invisible orders
 		add_filter( 'dokan_get_vendor_orders_args', [ $this, 'filter_dokan_orders' ], 20 );
+		add_filter( 'dokan_vendor_orders', [ $this, 'filter_order_results' ], 20 );
 
 		// 3. Unlocking mechanisms
 		add_action( $this->cron_hook, [ $this, 'unlock_expired_orders' ] );
@@ -33,14 +37,20 @@ class OrderVisibilityManager {
 	/**
 	 * Mark new orders as invisible and set unlock timestamp.
 	 */
-	public function initialize_visibility( $order_id, $posted_data, $order ) {
+	public function initialize_visibility_new( $order_id ) {
+		// Guard: If it's already set to 'no', don't re-init (might be duplicate hook call)
+		$existing = get_post_meta( $order_id, '_zh_vendor_visible', true );
+		if ( $existing === 'no' || $existing === 'yes' ) {
+			return;
+		}
+
 		$delay_value = (int) get_option( 'zh_order_visibility_delay_value', 2 );
 		$delay_unit  = get_option( 'zh_order_visibility_delay_unit', 'hours' );
 
 		$delay_seconds = ( $delay_unit === 'minutes' ) ? $delay_value * MINUTE_IN_SECONDS : $delay_value * HOUR_IN_SECONDS;
+		$unlock_at = time() + $delay_seconds;
 
-		update_post_meta( $order_id, '_zh_vendor_visible', 'no' );
-		update_post_meta( $order_id, '_zh_visibility_unlock_at', time() + $delay_seconds );
+		$this->apply_meta_to_order( $order_id, $unlock_at );
 
 		// Schedule cron if not already scheduled
 		if ( ! wp_next_scheduled( $this->cron_hook ) ) {
@@ -48,41 +58,78 @@ class OrderVisibilityManager {
 		}
 	}
 
+	private function apply_meta_to_order( $id, $unlock_at ) {
+		update_post_meta( $id, '_zh_vendor_visible', 'no' );
+		update_post_meta( $id, '_zh_visibility_unlock_at', $unlock_at );
+	}
+
 	/**
 	 * Filter Dokan orders to exclude those not yet visible.
 	 */
 	public function filter_dokan_orders( $args ) {
-		// Ensure we don't hide from admins in backend if they are somehow using this filter
+		// Ensure we don't hide from admins in backend
 		if ( is_admin() && ! defined( 'DOING_AJAX' ) ) {
 			return $args;
 		}
 
-		// Only apply logic if we are in Dokan context (vendor dashboard)
-		if ( ! function_exists( 'dokan_is_seller_dashboard' ) || ! dokan_is_seller_dashboard() ) {
-			// If it's an AJAX call from vendor dashboard, we still want to filter
-			if ( ! wp_doing_ajax() ) {
-				return $args;
-			}
+		// Robust dashboard check: Dokan dashboard is often on a page or via AJAX
+		$is_dashboard = ( function_exists( 'dokan_is_seller_dashboard' ) && dokan_is_seller_dashboard() );
+		$is_ajax_order_list = ( wp_doing_ajax() && isset( $_REQUEST['action'] ) && $_REQUEST['action'] === 'dokan_get_orders' );
+		
+		if ( ! $is_dashboard && ! $is_ajax_order_list && ! wp_doing_ajax() ) {
+			// return $args; // Temporary: keep aggressive for debugging
 		}
 
 		if ( ! isset( $args['meta_query'] ) ) {
 			$args['meta_query'] = [];
 		}
 
+		// Add visibility filter
 		$args['meta_query'][] = [
 			'relation' => 'OR',
 			[
 				'key'     => '_zh_vendor_visible',
-				'value'   => 'yes',
-				'compare' => '='
+				'compare' => 'NOT EXISTS'
 			],
 			[
 				'key'     => '_zh_vendor_visible',
-				'compare' => 'NOT EXISTS'
+				'value'   => 'yes',
+				'compare' => '='
 			]
 		];
 
 		return $args;
+	}
+
+	/**
+	 * Secondary filter for the final order objects/IDs.
+	 */
+	public function filter_order_results( $orders ) {
+		if ( ! is_array( $orders ) ) {
+			return $orders;
+		}
+
+		// Only apply logic if we are in Dokan context (vendor dashboard)
+		if ( ! function_exists( 'dokan_is_seller_dashboard' ) || ! dokan_is_seller_dashboard() ) {
+			if ( ! wp_doing_ajax() ) {
+				return $orders;
+			}
+		}
+
+		foreach ( $orders as $key => $order_item ) {
+			$id = 0;
+			if ( is_object( $order_item ) ) {
+				$id = isset( $order_item->ID ) ? $order_item->ID : ( isset( $order_item->order_id ) ? $order_item->order_id : 0 );
+			} elseif ( is_numeric( $order_item ) ) {
+				$id = $order_item;
+			}
+
+			if ( $id && ! $this->is_order_visible( true, $id ) ) {
+				unset( $orders[ $key ] );
+			}
+		}
+
+		return $orders;
 	}
 
 	/**
