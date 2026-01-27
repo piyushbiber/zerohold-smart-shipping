@@ -16,15 +16,17 @@ class OrderVisibilityManager {
 	private $cron_hook = 'zh_unlock_vendor_visibility_event';
 
 	public function __construct() {
-		// 1. Initialize visibility meta on order creation
-		add_action( 'woocommerce_new_order', [ $this, 'initialize_visibility_new' ], 20, 2 );
-		add_action( 'woocommerce_checkout_order_processed', [ $this, 'initialize_visibility_new' ], 20, 1 );
-		add_action( 'dokan_checkout_update_order_meta', [ $this, 'initialize_visibility_new' ], 20, 1 );
-		add_action( 'dokan_checkout_update_sub_order_meta', [ $this, 'initialize_visibility_new' ], 20, 1 );
+		// 1. Initialize visibility meta on order creation (Broad hooks)
+		add_action( 'woocommerce_new_order', [ $this, 'initialize_visibility_new' ], 5 );
+		add_action( 'woocommerce_checkout_order_processed', [ $this, 'initialize_visibility_new' ], 5 );
+		add_action( 'save_post_shop_order', [ $this, 'initialize_visibility_new' ], 5 );
+		add_action( 'dokan_checkout_update_order_meta', [ $this, 'initialize_visibility_new' ], 5 );
+		add_action( 'dokan_checkout_update_sub_order_meta', [ $this, 'initialize_visibility_new' ], 5 );
 
-		// 2. Filter Dokan order queries to hide invisible orders
-		add_filter( 'dokan_get_vendor_orders_args', [ $this, 'filter_dokan_orders' ], 20 );
-		add_filter( 'dokan_vendor_orders', [ $this, 'filter_order_results' ], 20 );
+		// 2. Filter order queries everywhere (Aggressive Failsafe)
+		add_action( 'pre_get_posts', [ $this, 'pre_get_posts_filter' ], 999 );
+		add_filter( 'dokan_get_vendor_orders_args', [ $this, 'filter_dokan_orders' ], 999 );
+		add_filter( 'dokan_vendor_orders', [ $this, 'filter_order_results' ], 999 );
 
 		// 3. Unlocking mechanisms
 		add_action( $this->cron_hook, [ $this, 'unlock_expired_orders' ] );
@@ -32,15 +34,66 @@ class OrderVisibilityManager {
 
 		// 4. Safety Guards
 		add_filter( 'zh_can_vendor_act_on_order', [ $this, 'is_order_visible' ], 10, 2 );
+
+		// 5. Debug
+		add_action( 'admin_notices', [ $this, 'debug_admin_notice' ] );
+	}
+
+	public function debug_admin_notice() {
+		if ( ! current_user_can( 'manage_options' ) ) return;
+		global $wpdb;
+		$no = $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key = '_zh_vendor_visible' AND meta_value = 'no'" );
+		$yes = $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key = '_zh_vendor_visible' AND meta_value = 'yes'" );
+		echo "<div class='notice notice-warning is-dismissible'><p><strong>ZSS Visibility Debug:</strong> Hidden (no): $no | Visible (yes): $yes</p></div>";
+	}
+
+	/**
+	 * Failsafe: Filter ANY shop_order query in the frontend.
+	 */
+	public function pre_get_posts_filter( $query ) {
+		// Only run on frontend queries
+		if ( is_admin() && ! defined( 'DOING_AJAX' ) ) {
+			return;
+		}
+
+		// Only target shop_order
+		$post_types = (array) $query->get( 'post_type' );
+		if ( ! in_array( 'shop_order', $post_types ) ) {
+			return;
+		}
+
+		// Get current meta query
+		$meta_query = $query->get( 'meta_query' ) ?: [];
+
+		// Add visibility guard
+		$meta_query[] = [
+			'relation' => 'OR',
+			[
+				'key'     => '_zh_vendor_visible',
+				'compare' => 'NOT EXISTS'
+			],
+			[
+				'key'     => '_zh_vendor_visible',
+				'value'   => 'no',
+				'compare' => '!='
+			]
+		];
+
+		$query->set( 'meta_query', $meta_query );
 	}
 
 	/**
 	 * Mark new orders as invisible and set unlock timestamp.
 	 */
 	public function initialize_visibility_new( $order_id ) {
-		// Guard: If it's already set to 'no', don't re-init (might be duplicate hook call)
+		if ( ! $order_id ) return;
+		
+		// error_log( "ZSS VISIBILITY DEBUG: initialize_visibility_new called for #$order_id" );
+
+		// Guard: If it's already set to 'no' or 'yes', don't re-init
 		$existing = get_post_meta( $order_id, '_zh_vendor_visible', true );
 		if ( $existing === 'no' || $existing === 'yes' ) {
+			// error_log( "ZSS VISIBILITY DEBUG: Already has meta ($existing) for #$order_id" );
 			return;
 		}
 
@@ -50,7 +103,10 @@ class OrderVisibilityManager {
 		$delay_seconds = ( $delay_unit === 'minutes' ) ? $delay_value * MINUTE_IN_SECONDS : $delay_value * HOUR_IN_SECONDS;
 		$unlock_at = time() + $delay_seconds;
 
-		$this->apply_meta_to_order( $order_id, $unlock_at );
+		// error_log( "ZSS VISIBILITY DEBUG: Setting #$order_id to 'no'. Unlock at: " . date('H:i:s', $unlock_at) );
+
+		update_post_meta( $order_id, '_zh_vendor_visible', 'no' );
+		update_post_meta( $order_id, '_zh_visibility_unlock_at', $unlock_at );
 
 		// Schedule cron if not already scheduled
 		if ( ! wp_next_scheduled( $this->cron_hook ) ) {
@@ -125,11 +181,12 @@ class OrderVisibilityManager {
 			}
 
 			if ( $id && ! $this->is_order_visible( true, $id ) ) {
+				// error_log( "ZSS VISIBILITY DEBUG: Hiding order #$id from results list." );
 				unset( $orders[ $key ] );
 			}
 		}
 
-		return $orders;
+		return array_values( $orders ); // Re-index for safety
 	}
 
 	/**
