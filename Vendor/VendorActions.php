@@ -222,6 +222,22 @@ class VendorActions {
 			// 2. Select Winner
 			$winner = $selector->selectBestRate( $active_quotes );
 
+			// DEBUG: Log Rate Selection
+			error_log( "ZSS DEBUG: Rate Selection Trace for Order #{$order_id}" );
+			error_log( "------------------------------------------------------------" );
+			foreach ($active_quotes as $p_name => $rates) {
+				error_log( "  Platform: {$p_name}" );
+				if (is_array($rates)) {
+					foreach ($rates as $r) {
+						$r_name = is_object($r) ? $r->courier_name : ($r['courier_name'] ?? 'Unknown');
+						$r_base = is_object($r) ? $r->base : ($r['base'] ?? '?');
+						error_log( "    - {$r_name}: ₹{$r_base}" );
+					}
+				}
+			}
+			error_log( "  > WINNER: " . (isset($winner->courier_name) ? $winner->courier_name : 'Unknown') . " (₹" . (isset($winner->base) ? $winner->base : '?') . ")" );
+			error_log( "------------------------------------------------------------" );
+
 			if ( ! $winner ) {
 				error_log( "ZSS ERROR: No valid shipping rates (with balance) found for Order #{$order_id}" );
 				wp_send_json_error( 'No shipping rates available from platforms with sufficient balance.' );
