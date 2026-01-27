@@ -827,15 +827,7 @@ class VendorActions {
 			'is_cached'      => false
 		]);
 	}
-	/**
-	 * Helper: Inject shipping line item into the order for Analytics visibility.
-	 * 
-	 * @param int   $order_id
-	 * @param float $cost
-	 */
-	private function inject_shipping_line_item( $order_id, $cost ) {
-		// Logic here (existing)
-	}
+
 
 	/**
 	 * Helper: Calculate Hidden Cap based on slabs and exclusions.
@@ -880,7 +872,7 @@ class VendorActions {
 
 		return 0;
 	}
-}	 */
+
 	private function inject_shipping_line_item( $order_id, $cost ) {
 		if ( ! $order_id || ! $cost ) {
 			return;
