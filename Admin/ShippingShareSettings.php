@@ -32,9 +32,8 @@ class ShippingShareSettings {
 			'default'           => 50,
 		] );
 
-		// Repeater Slabs stored as array
+		// Repeater Slabs stored as array (Removed 'type' => 'array' to prevent WP casting issues)
 		register_setting( 'zh_shipping_share_group', 'zh_hidden_cap_slabs', [
-			'type'              => 'array',
 			'sanitize_callback' => [ $this, 'sanitize_slabs' ],
 			'default'           => [],
 		] );
@@ -48,33 +47,59 @@ class ShippingShareSettings {
 	}
 
 	public function sanitize_slabs( $input ) {
+		// If null or empty, return empty array
+		if ( empty( $input ) || ! is_array( $input ) ) {
+			return [];
+		}
+
+		// Handle case where input is already row-based (rare, but good for safety)
+		if ( isset( $input[0]['min'] ) ) {
+			return array_values( $input );
+		}
+
+		// Process Column-Based Input (from Form: input[min][], input[max][], etc.)
 		$output = [];
-		if ( is_array( $input ) && isset( $input['min'] ) ) {
+		if ( isset( $input['min'] ) && is_array( $input['min'] ) ) {
 			$count = count( $input['min'] );
+			
 			for ( $i = 0; $i < $count; $i++ ) {
-				$min = isset( $input['min'][ $i ] ) ? floatval( $input['min'][ $i ] ) : 0;
-				$max = isset( $input['max'][ $i ] ) && $input['max'][ $i ] !== '' ? floatval( $input['max'][ $i ] ) : '';
+				$min_val = $input['min'][ $i ]; // Raw
+				
+				// Skip if Min is empty string (but allow "0")
+				if ( $min_val === '' || $min_val === null ) {
+					continue;
+				}
+
+				$min = floatval( $min_val );
+				$max = ( isset( $input['max'][ $i ] ) && $input['max'][ $i ] !== '' ) ? floatval( $input['max'][ $i ] ) : '';
 				$pct = isset( $input['percent'][ $i ] ) ? floatval( $input['percent'][ $i ] ) : 0;
 				
-				// Only save valid rows
-				if ( $min >= 0 ) {
-					$output[] = [ 'min' => $min, 'max' => $max, 'percent' => $pct ];
-				}
+				$output[] = [ 
+					'min'     => $min, 
+					'max'     => $max, 
+					'percent' => $pct 
+				];
 			}
 		}
-		// Sort by min value to ensure logical processing
+
+		// Sort by min value
 		usort( $output, function($a, $b) {
 			return $a['min'] <=> $b['min'];
 		});
+
 		return $output;
 	}
 
 	public function render_page() {
 		$slabs = get_option( 'zh_hidden_cap_slabs', [] );
-		// Ensure at least one empty row for new installs if empty
-		if ( empty( $slabs ) ) {
-			$slabs = []; 
+		
+		// Ensure it's an array (handle edge case where option might be corrupted string)
+		if ( ! is_array( $slabs ) ) {
+			$slabs = [];
 		}
+
+		// Debugging (Uncomment if needed)
+		// echo '<pre>' . print_r($slabs, true) . '</pre>';
 		?>
 		<div class="wrap">
 			<h1><?php _e( 'Vendor Shipping Deductions', 'zerohold-shipping' ); ?></h1>
@@ -123,8 +148,13 @@ class ShippingShareSettings {
 									<td><button type="button" class="button zh-remove-slab" style="color:#dc3232;">&times;</button></td>
 								</tr>
 							<?php endforeach; 
-						endif; 
-						?>
+						else: ?>
+							<tr class="zh-no-slabs-msg">
+								<td colspan="4" style="text-align: center; padding: 20px; color: #666;">
+									<?php _e( 'No hidden cap slabs configured yet. Click "Add Slab" to start.', 'zerohold-shipping' ); ?>
+								</td>
+							</tr>
+						<?php endif; ?>
 					</tbody>
 					<tfoot>
 						<tr>
@@ -150,11 +180,14 @@ class ShippingShareSettings {
 					`;
 
 					$('#zh-add-slab').on('click', function(){
+						// Remove empty message if it exists
+						$('.zh-no-slabs-msg').remove();
 						$body.append(rowTpl);
 					});
 
 					$body.on('click', '.zh-remove-slab', function(){
 						$(this).closest('tr').remove();
+						// If no rows left, add optional message? (Optional)
 					});
 				});
 				</script>
