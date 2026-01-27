@@ -360,7 +360,7 @@ class VendorActions {
 						$vendor_share_final = $vendor_share_base + $cap_amount;
 
 						update_post_meta( $order_id, '_zh_shipping_cost', $vendor_share_final );
-						update_post_meta( $order_id, '_zh_shipping_cost', $vendor_share );
+						// Removed duplicate overwrite line
 						update_post_meta( $order_id, '_zh_shipping_date', current_time( 'mysql' ) );
 						if ( $cap_amount > 0 ) {
 							error_log( "ZSS: Applied Hidden Cap of ₹{$cap_amount} to Vendor #{$vendor_id}" );
