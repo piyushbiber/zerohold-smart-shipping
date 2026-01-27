@@ -51,6 +51,11 @@ class VendorActions {
 			wp_die( 'Order not found' );
 		}
 
+		// Security Guard: Check if order is visible to vendor (cool-off window)
+		if ( apply_filters( 'zh_can_vendor_act_on_order', true, $order_id ) === false ) {
+			wp_die( 'This order is currently in the cool-off period and is not yet available for shipping actions.' );
+		}
+
 		// Step 2.6.2: Duplicate Guard - Prevent re-generation
 		$label_status = get_post_meta( $order_id, '_zh_shiprocket_label_status', true );
 		if ( $label_status == 1 ) {
@@ -156,6 +161,11 @@ class VendorActions {
 
 		if ( ! $order ) {
 			wp_send_json_error( 'Order not found' );
+		}
+
+		// Security Guard: Check if order is visible to vendor (cool-off window)
+		if ( apply_filters( 'zh_can_vendor_act_on_order', true, $order_id ) === false ) {
+			wp_send_json_error( 'This order is currently in the cool-off period and is not yet available for shipping actions.' );
 		}
 
 		// Duplicate Guard

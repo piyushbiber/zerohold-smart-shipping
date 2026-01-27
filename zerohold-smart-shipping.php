@@ -90,6 +90,9 @@ class ZeroHoldSmartShipping {
 		new Frontend\RetailerReturnUI();
 		new Core\DokanStatusSync();
 
+		// New: Order Visibility Delay Logic
+		new Core\OrderVisibilityManager();
+
 		// Bug Fix: Isolate Shipping from Vendor Total
 		new Core\DokanEarningsFix();
 
@@ -103,6 +106,7 @@ class ZeroHoldSmartShipping {
 			add_action( 'admin_menu', function() {
 				\Zerohold\Shipping\Admin\PincodeImportPage::register();
 			} );
+			new Admin\OrderVisibilitySettings();
 		}
 
 		// Register Refund Cleanup Hook
