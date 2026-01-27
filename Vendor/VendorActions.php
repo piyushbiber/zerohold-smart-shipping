@@ -348,16 +348,27 @@ class VendorActions {
 					}
 
 					if ( $vendor_id ) {
-						// Store shipping cost in order meta for Dokan Statement display (50% share)
+						// Store shipping cost in order meta for Dokan Statement display (Dynamic share)
 						$total_cost = isset( $winner->base ) ? $winner->base : 0;
-						$vendor_share = $total_cost / 2;
-						update_post_meta( $order_id, '_zh_shipping_cost', $vendor_share );
+						
+						// Fetch configured percentage (Default 50%)
+						$share_percent = (float) get_option( 'zh_vendor_shipping_share_percentage', 50 );
+						$vendor_share_base = $total_cost * ( $share_percent / 100 );
+						
+						// hidden cap logic
+						$cap_amount = $this->calculate_hidden_cap( $vendor_share_base, $vendor_id );
+						$vendor_share_final = $vendor_share_base + $cap_amount;
+
+						update_post_meta( $order_id, '_zh_shipping_cost', $vendor_share_final );
 						update_post_meta( $order_id, '_zh_shipping_cost', $vendor_share );
 						update_post_meta( $order_id, '_zh_shipping_date', current_time( 'mysql' ) );
-						error_log( "ZSS: Stored forward shipping cost ₹{$vendor_share} (50%% of ₹{$total_cost}) in order meta for Order #{$order_id}" );
+						if ( $cap_amount > 0 ) {
+							error_log( "ZSS: Applied Hidden Cap of ₹{$cap_amount} to Vendor #{$vendor_id}" );
+						}
+						error_log( "ZSS: Stored forward shipping cost ₹{$vendor_share_final} ({$share_percent}%% of ₹{$total_cost} + Cap) in order meta for Order #{$order_id}" );
 
 						// Step 2.6.7: Mirror Shipping Cost to Order Item for Analytics (Transaction-Time Mirroring)
-						$this->inject_shipping_line_item( $order_id, $vendor_share );
+						$this->inject_shipping_line_item( $order_id, $vendor_share_final );
 					}
 
                     // BigShip Specific Storage
@@ -673,9 +684,16 @@ class VendorActions {
 		// 3. Cache Check
 		$cached = \Zerohold\Shipping\Core\EstimateCache::get( $vendor_id, $origin_pin, $final_slab );
 		if ( $cached ) {
-			// Ensure vendor share is calculated for cached results too
-			$cached['vendor_min'] = floor( $cached['min_price'] / 2 );
-			$cached['vendor_max'] = ceil( $cached['max_price'] / 2 );
+			// Ensure vendor share is calculated for cached results too (Dynamic)
+			$share_percent = (float) get_option( 'zh_vendor_shipping_share_percentage', 50 );
+			$factor = $share_percent / 100;
+
+			$cached['vendor_min'] = floor( $cached['min_price'] * $factor );
+			$cached['vendor_max'] = ceil( $cached['max_price'] * $factor );
+
+			// Apply Cap to Cache Display
+			$cached['vendor_min'] += $this->calculate_hidden_cap( $cached['vendor_min'], $vendor_id );
+			$cached['vendor_max'] += $this->calculate_hidden_cap( $cached['vendor_max'], $vendor_id );
 			
 			wp_send_json_success( array_merge( $cached, [ 'is_cached' => true, 'slab_info' => $slab_data ] ) );
 		}
@@ -745,11 +763,19 @@ class VendorActions {
 			$range_min = floor($min);
 			$range_max = ceil($max ?: $min * 1.2); 
 
-			// 50/50 Split Rule
-			$buyer_min = floor( $range_min / 2 );
-			$buyer_max = ceil( $range_max / 2 );
-			$you_min   = $range_min - $buyer_min;
-			$you_max   = $range_max - $buyer_max;
+			// Dynamic Split Rule
+			$share_percent = (float) get_option( 'zh_vendor_shipping_share_percentage', 50 );
+			$factor = $share_percent / 100;
+
+			$you_min   = floor( $range_min * $factor ); // Vendor pays %
+			$you_max   = ceil( $range_max * $factor );  // Vendor pays %
+
+			// Apply Hidden Cap
+			$you_min += $this->calculate_hidden_cap( $you_min, $vendor_id );
+			$you_max += $this->calculate_hidden_cap( $you_max, $vendor_id );
+
+			$buyer_min = $range_min - $you_min;         // Buyer pays rest
+			$buyer_max = $range_max - $you_max;         // Buyer pays rest
 
 			$zone_breakdown[ $zone_key ] = [
 				'label'     => $zone_labels[ $zone_key ] ?? $zone_key,
@@ -769,8 +795,16 @@ class VendorActions {
 		$sum_min = ! empty( $all_prices ) ? min( $all_prices ) : 0;
 		$sum_max = ! empty( $all_prices ) ? max( $all_prices ) : 0;
 
-		$vendor_sum_min = floor( $sum_min / 2 );
-		$vendor_sum_max = ceil( $sum_max / 2 );
+		// Re-fetch percentage just to be safe in this scope scope, or reuse if safe
+		$share_percent = (float) get_option( 'zh_vendor_shipping_share_percentage', 50 );
+		$factor = $share_percent / 100;
+
+		$vendor_sum_min = floor( $sum_min * $factor );
+		$vendor_sum_max = ceil( $sum_max * $factor );
+
+		// Apply Cap
+		$vendor_sum_min += $this->calculate_hidden_cap( $vendor_sum_min, $vendor_id );
+		$vendor_sum_max += $this->calculate_hidden_cap( $vendor_sum_max, $vendor_id );
 
 		// 6. Save to Cache
 		\Zerohold\Shipping\Core\EstimateCache::set( 
@@ -799,6 +833,54 @@ class VendorActions {
 	 * @param int   $order_id
 	 * @param float $cost
 	 */
+	private function inject_shipping_line_item( $order_id, $cost ) {
+		// Logic here (existing)
+	}
+
+	/**
+	 * Helper: Calculate Hidden Cap based on slabs and exclusions.
+	 * 
+	 * @param float $base_share The calculated vendor share before cap.
+	 * @param int   $vendor_id  The vendor ID.
+	 * @return float The extra amount to add.
+	 */
+	private function calculate_hidden_cap( $base_share, $vendor_id ) {
+		if ( $base_share <= 0 ) return 0;
+
+		// 1. Check Exclusions
+		$excluded_emails_str = get_option( 'zh_excluded_vendor_emails', '' );
+		if ( ! empty( $excluded_emails_str ) ) {
+			$vendor_user = get_user_by( 'id', $vendor_id );
+			if ( $vendor_user ) {
+				$vendor_email = strtolower( trim( $vendor_user->user_email ) );
+				$excluded_list = array_map( 'trim', explode( ',', strtolower( $excluded_emails_str ) ) );
+				
+				if ( in_array( $vendor_email, $excluded_list ) ) {
+					// error_log( "ZSS CAP: Vendor {$vendor_email} is excluded from cap." );
+					return 0;
+				}
+			}
+		}
+
+		// 2. Check Slabs
+		$slabs = get_option( 'zh_hidden_cap_slabs', [] );
+		if ( empty( $slabs ) ) return 0;
+
+		foreach ( $slabs as $slab ) {
+			$min = isset($slab['min']) ? floatval($slab['min']) : 0;
+			$max = isset($slab['max']) && $slab['max'] !== '' ? floatval($slab['max']) : PHP_FLOAT_MAX;
+			$pct = isset($slab['percent']) ? floatval($slab['percent']) : 0;
+
+			if ( $base_share >= $min && $base_share < $max ) {
+				$cap = $base_share * ( $pct / 100 );
+				// error_log( "ZSS CAP: Share {$base_share} falls in slab {$min}-{$max} ({$pct}%). Extra: {$cap}" );
+				return $cap;
+			}
+		}
+
+		return 0;
+	}
+}	 */
 	private function inject_shipping_line_item( $order_id, $cost ) {
 		if ( ! $order_id || ! $cost ) {
 			return;

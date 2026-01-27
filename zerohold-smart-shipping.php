@@ -95,6 +95,7 @@ class ZeroHoldSmartShipping {
 
 		// Initialize Admin Pages
 		if ( is_admin() ) {
+			new Admin\ShippingShareSettings();
 			require_once __DIR__ . '/Core/Admin/PincodeImportPage.php';
 			add_action( 'admin_menu', function() {
 				\Zerohold\Shipping\Admin\PincodeImportPage::register();
