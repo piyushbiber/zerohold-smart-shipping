@@ -90,6 +90,9 @@ class ZeroHoldSmartShipping {
 		new Frontend\RetailerReturnUI();
 		new Core\DokanStatusSync();
 
+		// Bug Fix: Isolate Shipping from Vendor Total
+		new Core\DokanEarningsFix();
+
 		// Initialize Platforms (for testing auth)
 		new Platforms\ShiprocketAdapter();
 
