@@ -11,6 +11,7 @@ class ShippingShareSettings {
 	public function __construct() {
 		add_action( 'admin_menu', [ $this, 'add_submenu' ], 20 );
 		add_action( 'admin_init', [ $this, 'register_settings' ] );
+		add_action( 'wp_ajax_zh_search_vendors', [ $this, 'search_vendors' ] );
 	}
 
 	public function add_submenu() {
@@ -39,11 +40,48 @@ class ShippingShareSettings {
 		] );
 
 		// Excluded Emails (comma separated string)
+		// We accept an array from the form (Select2), but convert to string for storage
 		register_setting( 'zh_shipping_share_group', 'zh_excluded_vendor_emails', [
-			'type'              => 'string',
-			'sanitize_callback' => 'sanitize_textarea_field',
+			'sanitize_callback' => [ $this, 'sanitize_vendor_emails' ],
 			'default'           => '',
 		] );
+	}
+
+	public function sanitize_vendor_emails( $input ) {
+		if ( is_array( $input ) ) {
+			// Filter empty and sanitize emails
+			$clean = array_filter( array_map( 'sanitize_email', $input ) );
+			return implode( ',', $clean );
+		}
+		return sanitize_textarea_field( $input );
+	}
+
+	public function search_vendors() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( 'Unauthorized' );
+		}
+
+		$term = isset( $_GET['q'] ) ? sanitize_text_field( $_GET['q'] ) : '';
+		
+		$args = [
+			'search'         => '*' . $term . '*',
+			'search_columns' => [ 'user_login', 'user_email', 'display_name' ],
+			'fields'         => [ 'ID', 'user_email', 'display_name' ],
+			'number'         => 20,
+			// 'role__in'    => [ 'seller', 'administrator', 'dokan_vendor' ] // Optional: Restrict to vendors
+		];
+
+		$users = get_users( $args );
+		$results = [];
+
+		foreach ( $users as $user ) {
+			$results[] = [
+				'id'   => $user->user_email, // Use email as value
+				'text' => $user->display_name . ' (' . $user->user_email . ')',
+			];
+		}
+
+		wp_send_json_success( $results );
 	}
 
 	public function sanitize_slabs( $input ) {
@@ -98,8 +136,13 @@ class ShippingShareSettings {
 			$slabs = [];
 		}
 
-		// Debugging (Uncomment if needed)
-		// echo '<pre>' . print_r($slabs, true) . '</pre>';
+		// Load assets for TomSelect
+		echo '<link href="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/css/tom-select.default.min.css" rel="stylesheet">';
+		echo '<script src="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/js/tom-select.complete.min.js"></script>';
+
+		// Retrieve Excluded Emails
+		$current_emails_str = get_option( 'zh_excluded_vendor_emails', '' );
+		$current_emails = array_filter( array_map( 'trim', explode( ',', $current_emails_str ) ) );
 		?>
 		<div class="wrap">
 			<h1><?php _e( 'Vendor Shipping Deductions', 'zerohold-shipping' ); ?></h1>
@@ -187,7 +230,6 @@ class ShippingShareSettings {
 
 					$body.on('click', '.zh-remove-slab', function(){
 						$(this).closest('tr').remove();
-						// If no rows left, add optional message? (Optional)
 					});
 				});
 				</script>
@@ -197,10 +239,44 @@ class ShippingShareSettings {
 					<tr valign="top">
 						<th scope="row"><?php _e( 'Excluded Vendor Emails', 'zerohold-shipping' ); ?></th>
 						<td>
-							<textarea name="zh_excluded_vendor_emails" rows="5" cols="50" class="large-text code"><?php echo esc_textarea( get_option( 'zh_excluded_vendor_emails', '' ) ); ?></textarea>
+							<select id="zh-vendor-search" name="zh_excluded_vendor_emails[]" multiple placeholder="Search for vendors..." style="width: 100%; max-width: 600px;">
+								<?php 
+								foreach ( $current_emails as $email ) {
+									$user = get_user_by( 'email', $email );
+									$label = $user ? $user->display_name . ' (' . $email . ')' : $email;
+									echo '<option value="' . esc_attr( $email ) . '" selected>' . esc_html( $label ) . '</option>';
+								}
+								?>
+							</select>
 							<p class="description">
-								<?php _e( 'Enter email addresses of vendors who should be EXCLUDED from the Hidden Profit Cap logic. Separate by comma.', 'zerohold-shipping' ); ?>
+								<?php _e( 'Search and select vendors to EXCLUDE from the Hidden Profit Cap logic.', 'zerohold-shipping' ); ?>
 							</p>
+							<script>
+							document.addEventListener('DOMContentLoaded', function() {
+								if(window.TomSelect){
+									new TomSelect('#zh-vendor-search',{
+										valueField: 'id',
+										labelField: 'text',
+										searchField: 'text',
+										load: function(query, callback) {
+											var url = ajaxurl + '?action=zh_search_vendors&q=' + encodeURIComponent(query);
+											fetch(url)
+												.then(response => response.json())
+												.then(json => {
+													if(json.success) {
+														callback(json.data);
+													} else {
+														callback();
+													}
+												}).catch(()=>{
+													callback();
+												});
+										},
+										create: false
+									});
+								}
+							});
+							</script>
 						</td>
 					</tr>
 				</table>
