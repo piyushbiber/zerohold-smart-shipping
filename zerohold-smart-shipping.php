@@ -93,6 +93,9 @@ class ZeroHoldSmartShipping {
 		// New: Order Visibility Delay Logic
 		new Core\OrderVisibilityManager();
 
+		// New: Buyer Cancellation Logic
+		new Core\BuyerCancellationManager();
+
 		// Bug Fix: Isolate Shipping from Vendor Total
 		new Core\DokanEarningsFix();
 
