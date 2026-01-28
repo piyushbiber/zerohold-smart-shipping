@@ -23,8 +23,8 @@ class OrderVisibilityManager {
 		add_action( 'dokan_checkout_update_order_meta', [ $this, 'initialize_visibility_new' ], 5 );
 		add_action( 'dokan_checkout_update_sub_order_meta', [ $this, 'initialize_visibility_new' ], 5 );
 
-		// 2. Filter order queries everywhere (Aggressive Failsafe)
-		add_action( 'pre_get_posts', [ $this, 'pre_get_posts_filter' ], 999 );
+		// 2. Filter order queries everywhere (Aggressive SQL Failsafe)
+		add_filter( 'posts_clauses', [ $this, 'posts_clauses_filter' ], 999, 2 );
 		add_filter( 'dokan_get_vendor_orders_args', [ $this, 'filter_dokan_orders' ], 999 );
 		add_filter( 'dokan_vendor_orders', [ $this, 'filter_order_results' ], 999 );
 
@@ -48,38 +48,36 @@ class OrderVisibilityManager {
 	}
 
 	/**
-	 * Failsafe: Filter ANY shop_order query in the frontend.
+	 * Nuclear Option: Filter ANY SQL query for shop_order.
 	 */
-	public function pre_get_posts_filter( $query ) {
-		// Only run on frontend queries
+	public function posts_clauses_filter( $clauses, $query ) {
+		// Only run on frontend or AJAX
 		if ( is_admin() && ! defined( 'DOING_AJAX' ) ) {
-			return;
+			return $clauses;
 		}
 
 		// Only target shop_order
-		$post_types = (array) $query->get( 'post_type' );
-		if ( ! in_array( 'shop_order', $post_types ) ) {
-			return;
+		$post_type = $query->get( 'post_type' );
+		if ( $post_type !== 'shop_order' && ! ( is_array( $post_type ) && in_array( 'shop_order', $post_type ) ) ) {
+			return $clauses;
 		}
 
-		// Get current meta query
-		$meta_query = $query->get( 'meta_query' ) ?: [];
+		global $wpdb;
 
-		// Add visibility guard
-		$meta_query[] = [
-			'relation' => 'OR',
-			[
-				'key'     => '_zh_vendor_visible',
-				'compare' => 'NOT EXISTS'
-			],
-			[
-				'key'     => '_zh_vendor_visible',
-				'value'   => 'no',
-				'compare' => '!='
-			]
-		];
+		// Inject subquery to exclude hidden orders
+		$clauses['where'] .= $wpdb->prepare(
+			" AND {$wpdb->posts}.ID NOT IN ( SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_zh_vendor_visible' AND meta_value = 'no' )"
+		);
 
-		$query->set( 'meta_query', $meta_query );
+		return $clauses;
+	}
+
+	/**
+	 * Failsafe: Filter ANY shop_order query in the frontend.
+	 */
+	public function pre_get_posts_filter( $query ) {
+		// Deprecated in favor of posts_clauses but keeping as backup if needed
+		return;
 	}
 
 	/**
