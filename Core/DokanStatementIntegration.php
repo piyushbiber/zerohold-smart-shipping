@@ -174,6 +174,9 @@ class DokanStatementIntegration {
 		// STEP 7: Recalculate running balance
 		$final_entries = $this->recalculate_balance( $merged_entries );
 
+		// STEP 8: Reverse for display (Newest on Top)
+		$final_entries = array_reverse( $final_entries );
+
 		error_log( sprintf( 
 			"ZSS: Final statement - Total: %d (Dokan: %d, Shipping: %d, Penalties: %d)", 
 			count( $final_entries ),
