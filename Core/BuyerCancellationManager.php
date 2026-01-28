@@ -193,6 +193,10 @@ class BuyerCancellationManager {
 			
 			// Ensure it remains visible to vendor so they see the cancellation
 			update_post_meta( $order_id, '_zh_vendor_visible', 'yes' );
+			
+			// REFUND VENDOR SHIPPING COST
+			// Since label was generated, vendor paid shipping. Now order is cancelled, refund that cost back to vendor.
+			$this->refund_vendor_shipping_cost( $order_id );
 		}
 
 		// 2. Perform Refund
@@ -302,5 +306,67 @@ class BuyerCancellationManager {
 			<?php endif; ?>
 		</div>
 		<?php
+	}
+
+	/**
+	 * Refund vendor's shipping cost when buyer cancels after label generation.
+	 * 
+	 * @param int $order_id The order ID
+	 */
+	private function refund_vendor_shipping_cost( $order_id ) {
+		// Get the vendor ID
+		$vendor_id = 0;
+		if ( function_exists( 'dokan_get_seller_id_by_order' ) ) {
+			$vendor_id = dokan_get_seller_id_by_order( $order_id );
+		} else {
+			$order = wc_get_order( $order_id );
+			if ( $order ) {
+				$vendor_id = $order->get_meta( '_dokan_vendor_id', true );
+			}
+		}
+
+		if ( ! $vendor_id ) {
+			error_log( "ZSS: Cannot refund vendor shipping - vendor ID not found for order #{$order_id}" );
+			return;
+		}
+
+		// Get the shipping cost that was deducted from vendor
+		$shipping_cost = (float) get_post_meta( $order_id, '_zh_shipping_cost', true );
+
+		if ( $shipping_cost <= 0 ) {
+			error_log( "ZSS: No shipping cost to refund for order #{$order_id}" );
+			return;
+		}
+
+		// Credit vendor's wallet using TerraWallet
+		if ( function_exists( 'woo_wallet' ) ) {
+			try {
+				woo_wallet()->wallet->credit( 
+					$vendor_id, 
+					$shipping_cost, 
+					sprintf( __( 'Shipping refund for cancelled Order #%d', 'zerohold-shipping' ), $order_id )
+				);
+
+				// Add order note
+				$order = wc_get_order( $order_id );
+				if ( $order ) {
+					$order->add_order_note( 
+						sprintf( __( 'Vendor shipping cost (₹%s) refunded to wallet due to buyer cancellation.', 'zerohold-shipping' ), $shipping_cost )
+					);
+				}
+
+				// Mark as refunded to prevent double refunds
+				update_post_meta( $order_id, '_zh_shipping_refunded_to_vendor', 'yes' );
+				update_post_meta( $order_id, '_zh_shipping_refund_amount', $shipping_cost );
+				update_post_meta( $order_id, '_zh_shipping_refund_date', current_time( 'mysql' ) );
+
+				error_log( "ZSS: Refunded ₹{$shipping_cost} shipping cost to vendor #{$vendor_id} for order #{$order_id}" );
+
+			} catch ( \Exception $e ) {
+				error_log( "ZSS ERROR: Failed to refund vendor shipping - " . $e->getMessage() );
+			}
+		} else {
+			error_log( "ZSS ERROR: TerraWallet not available for vendor shipping refund" );
+		}
 	}
 }
