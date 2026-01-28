@@ -173,26 +173,28 @@ class BuyerCancellationManager {
 		$note = '';
 
 		if ( $stage === 'cool-off' ) {
-			$note = __( 'Buyer cancelled order during cool-off window. Full refund processed.', 'zerohold-shipping' );
+			$note = __( 'Buyer cancelled order during cool-off window.', 'zerohold-shipping' );
 			
 			// Mark as PERMANENTLY hidden from vendor (since it was cancelled during cool-off)
 			update_post_meta( $order_id, '_zh_vendor_visible', 'no' ); 
 			update_post_meta( $order_id, '_zh_buyer_cancelled_during_cooloff', 'yes' );
 		} elseif ( $stage === 'post-cooloff-no-label' ) {
 			// Cancelled after cool-off ended but before label generation
-			$note = __( 'Buyer cancelled order. Full refund processed (no label was generated).', 'zerohold-shipping' );
+			$note = __( 'Buyer cancelled order (No label generated).', 'zerohold-shipping' );
 			
 			// Keep order visible to vendor so they see the cancellation
 			update_post_meta( $order_id, '_zh_vendor_visible', 'yes' );
+			update_post_meta( $order_id, '_zh_buyer_cancelled_post_cooloff', 'yes' );
 		} else {
 			// Stage: post-label
 			// Get actual shipping amount paid by buyer (not vendor cost)
 			$shipping_total = (float) $order->get_shipping_total();
 			$refund_amount  = $order_total - $shipping_total;
-			$note = sprintf( __( 'Buyer cancelled order after label generation. Shipping charges (₹%s) were NOT refunded. Partial refund processed.', 'zerohold-shipping' ), $shipping_total );
+			$note = __( 'Buyer cancelled order after label generation.', 'zerohold-shipping' );
 			
 			// Ensure it remains visible to vendor so they see the cancellation
 			update_post_meta( $order_id, '_zh_vendor_visible', 'yes' );
+			update_post_meta( $order_id, '_zh_buyer_cancelled_post_label', 'yes' );
 			
 			// REFUND VENDOR SHIPPING COST
 			// Since label was generated, vendor paid shipping. Now order is cancelled, refund that cost back to vendor.
@@ -256,35 +258,38 @@ class BuyerCancellationManager {
 			return;
 		}
 		
-		// Check if this was a buyer cancellation
-		$cancelled_during_cooloff = get_post_meta( $order_id, '_zh_buyer_cancelled_during_cooloff', true );
+		// 1. Check if this was a buyer cancellation via meta flags or notes
+		$is_cooloff_cancel = get_post_meta( $order_id, '_zh_buyer_cancelled_during_cooloff', true ) === 'yes';
+		$is_post_cooloff   = get_post_meta( $order_id, '_zh_buyer_cancelled_post_cooloff', true ) === 'yes';
+		$is_post_label     = get_post_meta( $order_id, '_zh_buyer_cancelled_post_label', true ) === 'yes';
 		
-		// Check order notes for buyer cancellation
-		$notes = wc_get_order_notes( array(
-			'order_id' => $order_id,
-			'limit' => 5,
-		) );
-		
-		$is_buyer_cancelled = false;
-		$cancellation_message = '';
-		
-		foreach ( $notes as $note ) {
-			if ( stripos( $note->content, 'Buyer cancelled' ) !== false ) {
-				$is_buyer_cancelled = true;
-				$cancellation_message = $note->content;
-				break;
+		if ( ! $is_cooloff_cancel && ! $is_post_cooloff && ! $is_post_label ) {
+			// Fallback: Check notes if meta isn't set (for older orders during transition)
+			$notes = wc_get_order_notes( [ 'order_id' => $order_id, 'limit' => 5 ] );
+			foreach ( $notes as $note ) {
+				if ( stripos( $note->content, 'Buyer cancelled' ) !== false ) {
+					if ( stripos( $note->content, 'label generation' ) !== false ) $is_post_label = true;
+					else $is_post_cooloff = true;
+					break;
+				}
 			}
 		}
 		
-		if ( ! $is_buyer_cancelled && $cancelled_during_cooloff !== 'yes' ) {
+		if ( ! $is_cooloff_cancel && ! $is_post_cooloff && ! $is_post_label ) {
 			return;
 		}
 		
-		// Determine the message
-		if ( $cancelled_during_cooloff === 'yes' ) {
-			$message = __( '⚠️ This order was cancelled by the retailer during the cool-off window.', 'zerohold-shipping' );
+		// 2. Determine titles and messages (Vendor Facing)
+		$title = __( '⚠️ This order was cancelled by the retailer.', 'zerohold-shipping' );
+		$body  = '';
+
+		if ( $is_post_label ) {
+			$body = __( 'Your shipping charges (which were deducted) have been refunded. Please check your statement for the shipping refund entry.', 'zerohold-shipping' );
+		} elseif ( $is_post_cooloff ) {
+			$body = __( 'No shipping label was generated for this order, so no shipping charges were deducted.', 'zerohold-shipping' );
 		} else {
-			$message = __( '⚠️ This order was cancelled by the retailer.', 'zerohold-shipping' );
+			// Hidden usually, but for completeness:
+			$body = __( 'This order was cancelled during the cool-off window.', 'zerohold-shipping' );
 		}
 		
 		?>
@@ -297,13 +302,11 @@ class BuyerCancellationManager {
 			box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 		">
 			<h4 style="margin: 0 0 8px 0; color: #856404; font-size: 16px;">
-				<?php echo esc_html( $message ); ?>
+				<?php echo esc_html( $title ); ?>
 			</h4>
-			<?php if ( $cancellation_message ) : ?>
-				<p style="margin: 0; color: #856404; font-size: 14px;">
-					<?php echo esc_html( $cancellation_message ); ?>
-				</p>
-			<?php endif; ?>
+			<p style="margin: 0; color: #856404; font-size: 14px;">
+				<?php echo esc_html( $body ); ?>
+			</p>
 		</div>
 		<?php
 	}
