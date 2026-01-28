@@ -23,10 +23,10 @@ class OrderVisibilityManager {
 		add_action( 'dokan_checkout_update_order_meta', [ $this, 'initialize_visibility_new' ], 5 );
 		add_action( 'dokan_checkout_update_sub_order_meta', [ $this, 'initialize_visibility_new' ], 5 );
 
-		// 2. Filter order queries everywhere (Aggressive SQL Failsafe)
-		add_filter( 'posts_clauses', [ $this, 'posts_clauses_filter' ], 999, 2 );
+		// 2. Filter order queries everywhere (Failsafe)
 		add_filter( 'dokan_get_vendor_orders_args', [ $this, 'filter_dokan_orders' ], 999 );
-		add_filter( 'dokan_vendor_orders', [ $this, 'filter_order_results' ], 999 );
+		add_filter( 'dokan_get_vendor_orders', [ $this, 'filter_order_results' ], 999 );
+		add_filter( 'woocommerce_order_data_store_cpt_get_orders_query', [ $this, 'filter_wc_order_query' ], 999 );
 
 		// 3. Unlocking mechanisms
 		add_action( $this->cron_hook, [ $this, 'unlock_expired_orders' ] );
@@ -48,50 +48,21 @@ class OrderVisibilityManager {
 	}
 
 	/**
-	 * Nuclear Option: Filter ANY SQL query for shop_order.
-	 */
-	public function posts_clauses_filter( $clauses, $query ) {
-		// Only run on frontend or AJAX
-		if ( is_admin() && ! defined( 'DOING_AJAX' ) ) {
-			return $clauses;
-		}
-
-		// Only target shop_order
-		$post_type = $query->get( 'post_type' );
-		if ( $post_type !== 'shop_order' && ! ( is_array( $post_type ) && in_array( 'shop_order', $post_type ) ) ) {
-			return $clauses;
-		}
-
-		global $wpdb;
-
-		// Inject subquery to exclude hidden orders
-		$clauses['where'] .= $wpdb->prepare(
-			" AND {$wpdb->posts}.ID NOT IN ( SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_zh_vendor_visible' AND meta_value = 'no' )"
-		);
-
-		return $clauses;
-	}
-
-	/**
-	 * Failsafe: Filter ANY shop_order query in the frontend.
-	 */
-	public function pre_get_posts_filter( $query ) {
-		// Deprecated in favor of posts_clauses but keeping as backup if needed
-		return;
-	}
-
-	/**
 	 * Mark new orders as invisible and set unlock timestamp.
 	 */
 	public function initialize_visibility_new( $order_id ) {
 		if ( ! $order_id ) return;
-		
-		// error_log( "ZSS VISIBILITY DEBUG: initialize_visibility_new called for #$order_id" );
 
+		// Extract ID if object is passed
+		if ( is_object( $order_id ) && method_exists( $order_id, 'get_id' ) ) {
+			$order_id = $order_id->get_id();
+		}
+
+		if ( ! is_numeric( $order_id ) ) return;
+		
 		// Guard: If it's already set to 'no' or 'yes', don't re-init
 		$existing = get_post_meta( $order_id, '_zh_vendor_visible', true );
 		if ( $existing === 'no' || $existing === 'yes' ) {
-			// error_log( "ZSS VISIBILITY DEBUG: Already has meta ($existing) for #$order_id" );
 			return;
 		}
 
@@ -101,8 +72,6 @@ class OrderVisibilityManager {
 		$delay_seconds = ( $delay_unit === 'minutes' ) ? $delay_value * MINUTE_IN_SECONDS : $delay_value * HOUR_IN_SECONDS;
 		$unlock_at = time() + $delay_seconds;
 
-		// error_log( "ZSS VISIBILITY DEBUG: Setting #$order_id to 'no'. Unlock at: " . date('H:i:s', $unlock_at) );
-
 		update_post_meta( $order_id, '_zh_vendor_visible', 'no' );
 		update_post_meta( $order_id, '_zh_visibility_unlock_at', $unlock_at );
 
@@ -110,11 +79,6 @@ class OrderVisibilityManager {
 		if ( ! wp_next_scheduled( $this->cron_hook ) ) {
 			wp_schedule_event( time(), 'five_minutes', $this->cron_hook );
 		}
-	}
-
-	private function apply_meta_to_order( $id, $unlock_at ) {
-		update_post_meta( $id, '_zh_vendor_visible', 'no' );
-		update_post_meta( $id, '_zh_visibility_unlock_at', $unlock_at );
 	}
 
 	/**
@@ -126,19 +90,10 @@ class OrderVisibilityManager {
 			return $args;
 		}
 
-		// Robust dashboard check: Dokan dashboard is often on a page or via AJAX
-		$is_dashboard = ( function_exists( 'dokan_is_seller_dashboard' ) && dokan_is_seller_dashboard() );
-		$is_ajax_order_list = ( wp_doing_ajax() && isset( $_REQUEST['action'] ) && $_REQUEST['action'] === 'dokan_get_orders' );
-		
-		if ( ! $is_dashboard && ! $is_ajax_order_list && ! wp_doing_ajax() ) {
-			// return $args; // Temporary: keep aggressive for debugging
-		}
-
 		if ( ! isset( $args['meta_query'] ) ) {
 			$args['meta_query'] = [];
 		}
 
-		// Add visibility filter
 		$args['meta_query'][] = [
 			'relation' => 'OR',
 			[
@@ -156,35 +111,60 @@ class OrderVisibilityManager {
 	}
 
 	/**
-	 * Secondary filter for the final order objects/IDs.
+	 * Direct WooCommerce order query filter (Used by Dokan and others)
+	 */
+	public function filter_wc_order_query( $query_vars ) {
+		// Only run on frontend or AJAX
+		if ( is_admin() && ! defined( 'DOING_AJAX' ) ) {
+			return $query_vars;
+		}
+
+		if ( ! isset( $query_vars['meta_query'] ) ) {
+			$query_vars['meta_query'] = [];
+		}
+
+		$query_vars['meta_query'][] = [
+			'relation' => 'OR',
+			[
+				'key'     => '_zh_vendor_visible',
+				'compare' => 'NOT EXISTS'
+			],
+			[
+				'key'     => '_zh_vendor_visible',
+				'value'   => 'yes',
+				'compare' => '='
+			]
+		];
+
+		return $query_vars;
+	}
+
+	/**
+	 * Secondary filter for the final order objects/IDs returned by Dokan.
 	 */
 	public function filter_order_results( $orders ) {
 		if ( ! is_array( $orders ) ) {
 			return $orders;
 		}
 
-		// Only apply logic if we are in Dokan context (vendor dashboard)
-		if ( ! function_exists( 'dokan_is_seller_dashboard' ) || ! dokan_is_seller_dashboard() ) {
-			if ( ! wp_doing_ajax() ) {
-				return $orders;
-			}
-		}
+		// Relaxing context check for debugging
+		// error_log( "ZSS VISIBILITY DEBUG: filter_order_results processing " . count($orders) . " orders." );
 
 		foreach ( $orders as $key => $order_item ) {
 			$id = 0;
 			if ( is_object( $order_item ) ) {
-				$id = isset( $order_item->ID ) ? $order_item->ID : ( isset( $order_item->order_id ) ? $order_item->order_id : 0 );
+				$id = isset( $order_item->ID ) ? $order_item->ID : ( method_exists( $order_item, 'get_id' ) ? $order_item->get_id() : 0 );
 			} elseif ( is_numeric( $order_item ) ) {
 				$id = $order_item;
 			}
 
 			if ( $id && ! $this->is_order_visible( true, $id ) ) {
-				// error_log( "ZSS VISIBILITY DEBUG: Hiding order #$id from results list." );
+				// error_log( "ZSS VISIBILITY DEBUG: Hiding order #$id from results." );
 				unset( $orders[ $key ] );
 			}
 		}
 
-		return array_values( $orders ); // Re-index for safety
+		return array_values( $orders );
 	}
 
 	/**
@@ -193,7 +173,6 @@ class OrderVisibilityManager {
 	public function unlock_expired_orders() {
 		global $wpdb;
 
-		// Find orders with _zh_vendor_visible = 'no' and expired timestamp
 		$order_ids = $wpdb->get_col( $wpdb->prepare(
 			"SELECT post_id FROM {$wpdb->postmeta} 
 			 WHERE meta_key = '_zh_visibility_unlock_at' 
@@ -227,7 +206,6 @@ class OrderVisibilityManager {
 
 		global $wpdb;
 
-		// Find candidate orders for this vendor
 		$order_ids = $wpdb->get_col( $wpdb->prepare(
 			"SELECT p.ID FROM {$wpdb->posts} p
 			 JOIN {$wpdb->postmeta} pm_v ON p.ID = pm_v.post_id AND pm_v.meta_key = '_zh_vendor_visible' AND pm_v.meta_value = 'no'
@@ -249,6 +227,10 @@ class OrderVisibilityManager {
 	 * Check if an order is visible to the vendor.
 	 */
 	public function is_order_visible( $is_visible, $order_id ) {
+		if ( is_admin() && ! defined( 'DOING_AJAX' ) ) {
+			return $is_visible;
+		}
+
 		$status = get_post_meta( $order_id, '_zh_vendor_visible', true );
 		if ( $status === 'no' ) {
 			return false;
