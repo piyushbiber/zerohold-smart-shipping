@@ -31,8 +31,8 @@ class StatelessShipping {
 		$sr_adapter = new ShiprocketAdapter();
 		$sr_rates   = $sr_adapter->getRates( $shipment );
 
-		if ( ! empty( $sr_rates['shiprocket'] ) ) {
-			$winner = $selector->selectBestRate( $sr_rates );
+		if ( ! empty( $sr_rates ) ) {
+			$winner = $selector->selectBestRate( [ 'shiprocket' => $sr_rates ] );
 			if ( $winner && $winner->base > 0 ) {
 				return $winner;
 			}

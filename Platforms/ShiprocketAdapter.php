@@ -114,8 +114,11 @@ class ShiprocketAdapter implements PlatformInterface {
 			( $shipment->payment_mode === 'COD' ? 1 : 0 )
 		);
 		
+		if ( ! $quote || is_wp_error( $quote ) || ( isset($quote->base) && $quote->base <= 0 ) ) {
+			return [];
+		}
 
-		return [ 'shiprocket' => [ $quote ] ];
+		return [ $quote ];
 	}
 
 	public function generateAWB( $shipment_id ) {

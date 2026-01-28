@@ -178,7 +178,7 @@ class BigShipAdapter implements PlatformInterface {
         ];
 		
 		// error_log( "ZSS DEBUG: BigShip Draft Payload: " . print_r( $payload, true ) );
-		$response = $this->client->post( 'createDraftOrder', $payload );
+		$response = $this->client->post( 'order/add/single', $payload );
 		// error_log( "ZSS DEBUG: BigShip Draft Response: " . print_r( $response, true ) );
 
 		if ( is_wp_error( $response ) ) {
@@ -223,7 +223,7 @@ class BigShipAdapter implements PlatformInterface {
 		}
 	
 	// Store system_order_id for later use in createOrder (only if order exists)
-	if ( ! empty( $shipment->order_id ) ) {
+	if ( ! empty( $shipment->order_id ) && is_numeric( $shipment->order_id ) ) {
 		update_post_meta( $shipment->order_id, '_zh_bigship_system_order_id', $system_order_id );
 	}
 
@@ -301,10 +301,11 @@ class BigShipAdapter implements PlatformInterface {
 			'courier_id'      => (int) $courier_id
 		];
 		
-		
+		error_log( "ZSS DEBUG: BigShip - Manifesting Order..." );
+
 		// error_log( "ZSS DEBUG: BigShip Manifest Payload: " . print_r( $payload, true ) );
-		$response = $this->client->post( 'manifestShipment', $payload );
-		// error_log( "ZSS DEBUG: BigShip Manifest Response: " . print_r( $response, true ) );
+		$response = $this->client->post( 'order/manifest/add', $payload );
+		error_log( "ZSS DEBUG: BigShip Manifest Response: " . print_r( $response, true ) );
 		
 		
 		if ( isset( $response['success'] ) && $response['success'] === true ) {
