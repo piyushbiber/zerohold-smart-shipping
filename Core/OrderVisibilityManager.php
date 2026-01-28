@@ -190,7 +190,9 @@ class OrderVisibilityManager {
 	public function unlock_expired_orders() {
 		global $wpdb;
 
-		// Use CAST for reliable numeric comparison
+		// 1. Fetch only a manageable batch (e.g. 100 at a time) to prevent timeouts
+		$batch_limit = apply_filters( 'zh_order_visibility_unlock_batch_size', 100 );
+
 		$order_ids = $wpdb->get_col( $wpdb->prepare(
 			"SELECT post_id FROM {$wpdb->postmeta} 
 			 WHERE meta_key = '_zh_visibility_unlock_at' 
@@ -198,16 +200,34 @@ class OrderVisibilityManager {
 			 AND post_id IN (
 				SELECT post_id FROM {$wpdb->postmeta} 
 				WHERE meta_key = '_zh_vendor_visible' AND meta_value = 'no'
-			 )",
-			time()
+			 )
+			 LIMIT %d",
+			time(),
+			$batch_limit
 		) );
 
 		if ( ! empty( $order_ids ) ) {
+			// 2. Perform bulk update
+			$ids_string = implode( ',', array_map( 'absint', $order_ids ) );
+			$wpdb->query( "UPDATE {$wpdb->postmeta} SET meta_value = 'yes' WHERE meta_key = '_zh_vendor_visible' AND post_id IN ($ids_string)" );
+
+			// 3. Optimized Cache Clearing (Bulk aware)
 			foreach ( $order_ids as $order_id ) {
-				update_post_meta( $order_id, '_zh_vendor_visible', 'yes' );
-				$this->clear_order_visibility_cache( $order_id );
-				// error_log( "ZSS VISIBILITY: Order #$order_id unlocked via Cron." );
+				// Clear Dokan Cache (Lightweight)
+				if ( class_exists( '\WeDevs\Dokan\Order\OrderCache' ) ) {
+					$seller_id = dokan_get_seller_id_by_order( $order_id );
+					if ( $seller_id ) {
+						\WeDevs\Dokan\Order\OrderCache::delete( $seller_id, $order_id );
+					}
+				}
+				clean_post_cache( $order_id );
 			}
+
+			// 4. Single Global Flush (Heavyweight - call once per batch)
+			if ( function_exists( 'wp_cache_flush' ) ) wp_cache_flush();
+			if ( has_action( 'litespeed_purge_all' ) ) do_action( 'litespeed_purge_all' );
+			
+			// error_log( "ZSS VISIBILITY: " . count($order_ids) . " orders unlocked in production batch." );
 		}
 	}
 
