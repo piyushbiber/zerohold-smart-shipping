@@ -217,8 +217,8 @@ class VendorShippingOrchestrator {
 			$vendor_share_final = \Zerohold\Shipping\Core\PriceEngine::calculate_share_and_cap( $total_cost, 'vendor', $vendor_id );
 			
 			update_post_meta( $order_id, '_zh_shipping_cost', $vendor_share_final );
-
-			\Zerohold\Shipping\Core\WalletTransactionManager::debit_shipping_charge( $order_id, $total_cost, $vendor_id );
+			
+			// Note: Wallet deduction is handled by DokanStatementIntegration reading _zh_shipping_cost
 		}
 	}
 
