@@ -31,6 +31,9 @@ class OrderVisibilityManager {
 		// 3. Unlocking mechanisms
 		add_action( $this->cron_hook, [ $this, 'unlock_expired_orders' ] );
 		add_action( 'dokan_dashboard_content_before', [ $this, 'lazy_unlock_vendor_orders' ] );
+		add_action( 'dokan_order_content_before', [ $this, 'lazy_unlock_vendor_orders' ] );
+		add_action( 'dokan_order_content_inside_before', [ $this, 'lazy_unlock_vendor_orders' ] );
+		add_action( 'admin_init', [ $this, 'lazy_unlock_vendor_orders' ] );
 
 		// 4. Safety Guards
 		add_filter( 'zh_can_vendor_act_on_order', [ $this, 'is_order_visible' ], 10, 2 );
@@ -220,11 +223,11 @@ class OrderVisibilityManager {
 	public function unlock_expired_orders() {
 		global $wpdb;
 
-		// 1. Fetch only a manageable batch
-		$batch_limit = apply_filters( 'zh_order_visibility_unlock_batch_size', 50 ); // Smaller batch for stability
+		// 1. Fetch a bulk batch for background processing
+		// Default is 100 per batch (every 5 mins). This can handle thousands of orders quickly.
+		$batch_limit = apply_filters( 'zh_order_visibility_unlock_batch_size', 100 );
 		$now = time();
 
-		// Use + 0 to force numeric comparison in SQL
 		$order_ids = $wpdb->get_col( $wpdb->prepare(
 			"SELECT DISTINCT pm1.post_id 
 			 FROM {$wpdb->postmeta} pm1
@@ -239,22 +242,18 @@ class OrderVisibilityManager {
 
 		if ( ! empty( $order_ids ) ) {
 			foreach ( $order_ids as $order_id ) {
-				// 1. Direct Meta Update
 				update_post_meta( $order_id, '_zh_vendor_visible', 'yes' );
-				
-				// 2. Minimal Cache Clear (Post only)
 				clean_post_cache( $order_id );
 				
-				// 3. Dokan Cache (Surgical)
 				if ( class_exists( '\WeDevs\Dokan\Order\OrderCache' ) && function_exists( 'dokan_get_seller_id_by_order' ) ) {
 					$seller_id = dokan_get_seller_id_by_order( $order_id );
 					if ( $seller_id ) \WeDevs\Dokan\Order\OrderCache::delete( $seller_id, $order_id );
 				}
 			}
 			
-			// 4. Global LiteSpeed Purge (Only once per batch)
-			if ( class_exists( 'LiteSpeed\Purge' ) && method_exists( 'LiteSpeed\Purge', 'purge_all' ) ) {
-				\LiteSpeed\Purge::purge_all();
+			// 4. Global LiteSpeed Purge (Safer Action Hook)
+			if ( has_action( 'litespeed_purge_all' ) ) {
+				do_action( 'litespeed_purge_all' );
 			}
 		}
 	}
@@ -263,50 +262,31 @@ class OrderVisibilityManager {
 	 * Lazy unlock for the current vendor when they view their dashboard.
 	 */
 	public function lazy_unlock_vendor_orders() {
-		if ( ! function_exists( 'dokan_get_current_user_id' ) ) {
-			return;
-		}
-
-		$vendor_id = dokan_get_current_user_id();
-		if ( ! $vendor_id ) {
-			return;
-		}
-
 		global $wpdb;
 
-		// Find overdue orders for this vendor specifically
+		// JANITOR MODE: Check for ANY overdue orders globally on dashboard page load
+		// Restricted to a very small batch to prevent performance hit on page load
 		$order_ids = $wpdb->get_col( $wpdb->prepare(
 			"SELECT DISTINCT pm1.post_id 
 			 FROM {$wpdb->postmeta} pm1
 			 JOIN {$wpdb->postmeta} pm2 ON pm1.post_id = pm2.post_id
-			 LEFT JOIN {$wpdb->prefix}dokan_orders do ON pm1.post_id = do.order_id
-			 LEFT JOIN {$wpdb->postmeta} pm3 ON pm1.post_id = pm3.post_id AND pm3.meta_key = '_dokan_vendor_id'
 			 WHERE pm1.meta_key = '_zh_vendor_visible' AND pm1.meta_value = 'no'
-			 AND pm2.meta_key = '_zh_visibility_unlock_at' AND (pm2.meta_value + 0) <= %d
-			 AND (do.seller_id = %d OR pm3.meta_value = %s)",
-			time(),
-			$vendor_id,
-			(string)$vendor_id
+			 AND (pm2.meta_key = '_zh_visibility_unlock_at' AND (pm2.meta_value + 0) <= %d)
+			 AND pm1.post_id NOT IN (SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_zh_buyer_cancelled_during_cooloff' AND meta_value = 'yes')
+			 LIMIT 5",
+			time()
 		) );
 
 		if ( ! empty( $order_ids ) ) {
 			foreach ( $order_ids as $order_id ) {
-				try {
-					update_post_meta( $order_id, '_zh_vendor_visible', 'yes' );
-					
-					// Only do lightweight post-level cache clearing in the loop
-					clean_post_cache( $order_id );
-					if ( class_exists( '\WeDevs\Dokan\Order\OrderCache' ) && function_exists( 'dokan_get_seller_id_by_order' ) ) {
-						$seller_id = dokan_get_seller_id_by_order( $order_id );
-						if ( $seller_id ) \WeDevs\Dokan\Order\OrderCache::delete( $seller_id, $order_id );
-					}
-				} catch ( \Throwable $e ) {
-					// Be silent, don't crash the dashboard
-				}
+				update_post_meta( $order_id, '_zh_vendor_visible', 'yes' );
+				clean_post_cache( $order_id );
 			}
 
-			// Perform surgical purge for this specific vendor only
-			$this->purge_vendor_pages_surgical( $vendor_id );
+			// Clear cache for current vendor only to avoid critical error/timeout on page load
+			if ( function_exists( 'dokan_get_current_user_id' ) ) {
+				$this->purge_vendor_pages_surgical( dokan_get_current_user_id() );
+			}
 		}
 	}
 
@@ -340,19 +320,16 @@ class OrderVisibilityManager {
 	public function purge_vendor_pages_surgical( $vendor_id ) {
 		if ( ! $vendor_id ) return;
 
-		// 1. Clear generic page cache if LiteSpeed is present
-		if ( class_exists( 'LiteSpeed\Purge' ) ) {
-			// Purge the vendor's specific order dashboard
-			if ( function_exists( 'dokan_get_navigation_url' ) ) {
-				$order_url = dokan_get_navigation_url( 'orders' );
-				\LiteSpeed\Purge::purge_url( $order_url );
-				
-				$dashboard_url = dokan_get_navigation_url( 'dashboard' );
-				\LiteSpeed\Purge::purge_url( $dashboard_url );
-			}
+		// 1. Surgical LiteSpeed Purge via Action Hook (Safer than direct class calls)
+		if ( function_exists( 'dokan_get_navigation_url' ) ) {
+			$order_url = dokan_get_navigation_url( 'orders' );
+			$dashboard_url = dokan_get_navigation_url( 'dashboard' );
+			
+			do_action( 'litespeed_purge_url', $order_url );
+			do_action( 'litespeed_purge_url', $dashboard_url );
 		}
 
-		// 2. Trigger Dokan hooks that might be watched by cache plugins
+		// 2. Trigger Dokan hooks that might be watched by other cache plugins
 		do_action( 'dokan_vendor_orders_updated', $vendor_id );
 	}
 
