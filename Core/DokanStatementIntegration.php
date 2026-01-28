@@ -414,11 +414,17 @@ class DokanStatementIntegration {
 
 		error_log( "ZSS: Syncing summary cards for Vendor #{$vendor_id} ($start_date to $end_date)" );
 
-		// 1. SHIPPING CHARGES
+		// 1. SHIPPING CHARGES (Separate Costs and Refunds)
 		$shipping_entries = $this->query_shipping_orders( $vendor_id, $start_date, $end_date );
 		$total_shipping_cost = 0;
+		$total_shipping_refund = 0;
+		
 		foreach ( $shipping_entries as $entry ) {
-			$total_shipping_cost += (float) $entry->shipping_cost;
+			if ( $entry->shipping_type === 'refund' ) {
+				$total_shipping_refund += (float) $entry->shipping_cost;
+			} else {
+				$total_shipping_cost += (float) $entry->shipping_cost;
+			}
 		}
 
 		// 2. REJECTION PENALTIES
@@ -428,11 +434,18 @@ class DokanStatementIntegration {
 			$total_penalties += (float) $penalty->total_deduction;
 		}
 
-		// Apply Adjustments to Credit
-		$total_custom_deductions = $total_shipping_cost + $total_penalties;
-		if ( $total_custom_deductions > 0 ) {
-			error_log( "ZSS: Adjusting summary cards. Deductions: ₹{$total_custom_deductions}" );
-			$summary_data['total_credit'] += $total_custom_deductions;
+		// Apply Adjustments
+		// Refunds increase DEBIT (Earnings)
+		if ( $total_shipping_refund > 0 ) {
+			error_log( "ZSS: Adjusting summary cards. Adding Refunds to Debit: ₹{$total_shipping_refund}" );
+			$summary_data['total_debit'] += $total_shipping_refund;
+		}
+
+		// Costs increase CREDIT (Deductions)
+		$total_deductions = $total_shipping_cost + $total_penalties;
+		if ( $total_deductions > 0 ) {
+			error_log( "ZSS: Adjusting summary cards. Adding Deductions to Credit: ₹{$total_deductions}" );
+			$summary_data['total_credit'] += $total_deductions;
 		}
 
 		// 3. RECONCILE BALANCE Math
