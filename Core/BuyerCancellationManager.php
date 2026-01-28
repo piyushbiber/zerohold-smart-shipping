@@ -72,40 +72,46 @@ class BuyerCancellationManager {
 
 	/**
 	 * Add Cancel button to the actions list if order is in cool-off OR label generated but not shipped.
+	 * Also keeps button visible in the "gap" between cool-off and label generation.
 	 */
 	public function add_cancel_button( $actions, $order ) {
 		if ( ! $order ) return $actions;
 
 		$order_id = $order->get_id();
 
-		// Stage 1: Cool-off window
-		$is_visible = get_post_meta( $order_id, '_zh_vendor_visible', true );
-		$unlock_at  = (int) get_post_meta( $order_id, '_zh_visibility_unlock_at', true );
-
-		if ( $is_visible === 'no' && $unlock_at > time() && $order->has_status( ['on-hold', 'processing', 'pending'] ) ) {
-			$actions['zh_cancel'] = [
-				'url'  => wp_nonce_url( add_query_arg( 'zh_cancel_order', $order_id ), 'zh_cancel_order_nonce' ),
-				'name' => __( 'Cancel', 'zerohold-shipping' ),
-			];
-			// Mark as cool-off stage
-			echo '<script>document.addEventListener("DOMContentLoaded", function(){ 
-				const btns = document.querySelectorAll(".zh_cancel[href*=\'zh_cancel_order=' . $order_id . '\']");
-				btns.forEach(b => b.setAttribute("data-stage", "cool-off"));
-			});</script>';
+		// Guard: Don't show if already shipped or completed
+		if ( ! $order->has_status( ['on-hold', 'processing', 'pending'] ) ) {
 			return $actions;
 		}
 
-		// Stage 2: Post-Label (Visible to vendor, but not yet completed/shipped)
+		$is_visible   = get_post_meta( $order_id, '_zh_vendor_visible', true );
+		$unlock_at    = (int) get_post_meta( $order_id, '_zh_visibility_unlock_at', true );
 		$label_status = get_post_meta( $order_id, '_zh_shiprocket_label_status', true );
-		if ( $label_status == 1 && $order->has_status( ['on-hold', 'processing', 'pending'] ) ) {
+
+		// Determine Stage for Frontend
+		$stage = 'none';
+
+		if ( $label_status == 1 ) {
+			// Stage 2: Label exists (Partial Refund)
+			$stage = 'post-label';
+		} else {
+			// Stage 1: No Label yet (Full Refund)
+			// This covers: 
+			// 1. Cool-off window (invisible)
+			// 2. The Gap (visible but no label yet)
+			$stage = 'cool-off'; 
+		}
+
+		if ( $stage !== 'none' ) {
 			$actions['zh_cancel'] = [
 				'url'  => wp_nonce_url( add_query_arg( 'zh_cancel_order', $order_id ), 'zh_cancel_order_nonce' ),
 				'name' => __( 'Cancel', 'zerohold-shipping' ),
 			];
-			// Mark as post-label stage
+
+			// Inject JS to set the stage on the button
 			echo '<script>document.addEventListener("DOMContentLoaded", function(){ 
 				const btns = document.querySelectorAll(".zh_cancel[href*=\'zh_cancel_order=' . $order_id . '\']");
-				btns.forEach(b => b.setAttribute("data-stage", "post-label"));
+				btns.forEach(b => b.setAttribute("data-stage", "' . $stage . '"));
 			});</script>';
 		}
 
@@ -133,21 +139,23 @@ class BuyerCancellationManager {
 			return;
 		}
 
+		// Re-verify order status
+		if ( ! $order->has_status( ['on-hold', 'processing', 'pending'] ) ) {
+			wc_add_notice( __( 'Order cannot be cancelled at this stage.', 'zerohold-shipping' ), 'error' );
+			return;
+		}
+
 		// Determine Stage
 		$is_visible   = get_post_meta( $order_id, '_zh_vendor_visible', true );
 		$unlock_at    = (int) get_post_meta( $order_id, '_zh_visibility_unlock_at', true );
 		$label_status = get_post_meta( $order_id, '_zh_shiprocket_label_status', true );
 
 		$stage = 'none';
-		if ( $is_visible === 'no' && $unlock_at > time() ) {
-			$stage = 'cool-off';
-		} elseif ( $label_status == 1 ) {
+		if ( $label_status == 1 ) {
 			$stage = 'post-label';
-		}
-
-		if ( $stage === 'none' ) {
-			wc_add_notice( __( 'Cancellation window has closed. Please contact support.', 'zerohold-shipping' ), 'error' );
-			return;
+		} else {
+			// If no label, it's cancellable with full refund (Cool-off OR Gap)
+			$stage = 'cool-off';
 		}
 
 		// 1. Calculate Refund Amount
