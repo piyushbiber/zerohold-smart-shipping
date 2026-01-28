@@ -152,9 +152,23 @@ class DokanStatementIntegration {
 		// STEP 5: Merge all entries (Original + Shipping + Penalties)
 		$merged_entries = array_merge( $filtered_entries, $transformed_shipping, $penalty_entries );
 
-		// STEP 6: Sort by balance_date
+
+		// STEP 6: Sort by balance_date (with Opening Balance ALWAYS first)
 		usort( $merged_entries, function( $a, $b ) {
-			return strtotime( $a['balance_date'] ) - strtotime( $b['balance_date'] );
+			// Priority 1: Force Opening Balance to top
+			if ( isset( $a['trn_type'] ) && $a['trn_type'] === 'opening_balance' ) return -1;
+			if ( isset( $b['trn_type'] ) && $b['trn_type'] === 'opening_balance' ) return 1;
+
+			// Priority 2: Sort by Date (Ascending - Oldest First)
+			$time_a = strtotime( $a['balance_date'] );
+			$time_b = strtotime( $b['balance_date'] );
+
+			if ( $time_a !== $time_b ) {
+				return $time_a - $time_b;
+			}
+
+			// Priority 3: Stable sort by ID (to prevent random jumping)
+			return strnatcmp( $a['id'], $b['id'] ); 
 		});
 
 		// STEP 7: Recalculate running balance
