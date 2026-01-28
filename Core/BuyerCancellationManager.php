@@ -51,8 +51,16 @@ class BuyerCancellationManager {
 		<script>
 		document.addEventListener('DOMContentLoaded', function() {
 			document.body.addEventListener('click', function(e) {
-				if (e.target && e.target.classList.contains('zh_cancel')) {
-					if (!confirm('<?php _e("Are you sure you want to cancel this order? The total amount will be refunded to your wallet immediately.", "zerohold-shipping"); ?>')) {
+				const btn = e.target.closest('.zh_cancel');
+				if (btn) {
+					const stage = btn.getAttribute('data-stage');
+					let msg = '<?php _e("Are you sure you want to cancel this order? The total amount will be refunded to your wallet immediately.", "zerohold-shipping"); ?>';
+					
+					if (stage === 'post-label') {
+						msg = '<?php _e("Your order is already packed and a shipping label has been generated. If you cancel now, shipping charges will NOT be refunded. Do you still want to proceed?", "zerohold-shipping"); ?>';
+					}
+
+					if (!confirm(msg)) {
 						e.preventDefault();
 					}
 				}
@@ -63,23 +71,42 @@ class BuyerCancellationManager {
 	}
 
 	/**
-	 * Add Cancel button to the actions list if order is in cool-off.
+	 * Add Cancel button to the actions list if order is in cool-off OR label generated but not shipped.
 	 */
 	public function add_cancel_button( $actions, $order ) {
 		if ( ! $order ) return $actions;
 
 		$order_id = $order->get_id();
 
-		// Check visibility meta
+		// Stage 1: Cool-off window
 		$is_visible = get_post_meta( $order_id, '_zh_vendor_visible', true );
 		$unlock_at  = (int) get_post_meta( $order_id, '_zh_visibility_unlock_at', true );
 
-		// Only show if invisible and time remains
 		if ( $is_visible === 'no' && $unlock_at > time() && $order->has_status( ['on-hold', 'processing', 'pending'] ) ) {
 			$actions['zh_cancel'] = [
 				'url'  => wp_nonce_url( add_query_arg( 'zh_cancel_order', $order_id ), 'zh_cancel_order_nonce' ),
 				'name' => __( 'Cancel', 'zerohold-shipping' ),
 			];
+			// Mark as cool-off stage
+			echo '<script>document.addEventListener("DOMContentLoaded", function(){ 
+				const btns = document.querySelectorAll(".zh_cancel[href*=\'zh_cancel_order=' . $order_id . '\']");
+				btns.forEach(b => b.setAttribute("data-stage", "cool-off"));
+			});</script>';
+			return $actions;
+		}
+
+		// Stage 2: Post-Label (Visible to vendor, but not yet completed/shipped)
+		$label_status = get_post_meta( $order_id, '_zh_shiprocket_label_status', true );
+		if ( $label_status == 1 && $order->has_status( ['on-hold', 'processing', 'pending'] ) ) {
+			$actions['zh_cancel'] = [
+				'url'  => wp_nonce_url( add_query_arg( 'zh_cancel_order', $order_id ), 'zh_cancel_order_nonce' ),
+				'name' => __( 'Cancel', 'zerohold-shipping' ),
+			];
+			// Mark as post-label stage
+			echo '<script>document.addEventListener("DOMContentLoaded", function(){ 
+				const btns = document.querySelectorAll(".zh_cancel[href*=\'zh_cancel_order=' . $order_id . '\']");
+				btns.forEach(b => b.setAttribute("data-stage", "post-label"));
+			});</script>';
 		}
 
 		return $actions;
@@ -106,59 +133,84 @@ class BuyerCancellationManager {
 			return;
 		}
 
-		// Re-verify cool-off status
-		$is_visible = get_post_meta( $order_id, '_zh_vendor_visible', true );
-		$unlock_at  = (int) get_post_meta( $order_id, '_zh_visibility_unlock_at', true );
+		// Determine Stage
+		$is_visible   = get_post_meta( $order_id, '_zh_vendor_visible', true );
+		$unlock_at    = (int) get_post_meta( $order_id, '_zh_visibility_unlock_at', true );
+		$label_status = get_post_meta( $order_id, '_zh_shiprocket_label_status', true );
 
-		if ( $is_visible !== 'no' || $unlock_at <= time() ) {
+		$stage = 'none';
+		if ( $is_visible === 'no' && $unlock_at > time() ) {
+			$stage = 'cool-off';
+		} elseif ( $label_status == 1 ) {
+			$stage = 'post-label';
+		}
+
+		if ( $stage === 'none' ) {
 			wc_add_notice( __( 'Cancellation window has closed. Please contact support.', 'zerohold-shipping' ), 'error' );
 			return;
 		}
 
-		// Mark as PERMANENTLY hidden from vendor (since it was cancelled during cool-off)
-		update_post_meta( $order_id, '_zh_vendor_visible', 'no' ); 
-		update_post_meta( $order_id, '_zh_buyer_cancelled_during_cooloff', 'yes' );
+		// 1. Calculate Refund Amount
+		$order_total = (float) $order->get_total();
+		$refund_amount = $order_total;
+		$note = '';
 
-		// 1. Perform Refund
-		$this->process_immediate_refund( $order );
+		if ( $stage === 'cool-off' ) {
+			$note = __( 'Buyer cancelled order during cool-off window. Full refund processed.', 'zerohold-shipping' );
+			
+			// Mark as PERMANENTLY hidden from vendor (since it was cancelled during cool-off)
+			update_post_meta( $order_id, '_zh_vendor_visible', 'no' ); 
+			update_post_meta( $order_id, '_zh_buyer_cancelled_during_cooloff', 'yes' );
+		} else {
+			// Stage: post-label
+			// Get actual shipping amount paid by buyer (not vendor cost)
+			$shipping_total = (float) $order->get_shipping_total();
+			$refund_amount  = $order_total - $shipping_total;
+			$note = sprintf( __( 'Buyer cancelled order after label generation. Shipping charges (₹%s) were NOT refunded. Partial refund processed.', 'zerohold-shipping' ), $shipping_total );
+			
+			// Ensure it remains visible to vendor so they see the cancellation
+			update_post_meta( $order_id, '_zh_vendor_visible', 'yes' );
+		}
 
-		// 2. Update Order Status
-		$order->update_status( 'cancelled', __( 'Buyer cancelled order during cool-off window.', 'zerohold-shipping' ) );
+		// 2. Perform Refund
+		$this->process_immediate_refund( $order, $refund_amount, $note );
 
-		// 3. Clear visibility cache (though it shouldn't matter as it's cancelled)
+		// 3. Update Order Status
+		$order->update_status( 'cancelled', $note );
+
+		// 4. Clear visibility cache
 		if ( class_exists( 'Zerohold\Shipping\Core\OrderVisibilityManager' ) ) {
 			$ovm = new OrderVisibilityManager();
 			$ovm->clear_order_visibility_cache( $order_id );
 		}
 
-		wc_add_notice( __( 'Order cancelled and refund processed successfully.', 'zerohold-shipping' ), 'success' );
+		wc_add_notice( __( 'Order cancelled successfully.', 'zerohold-shipping' ), 'success' );
 
 		wp_safe_redirect( wc_get_endpoint_url( 'orders', '', wc_get_page_permalink( 'myaccount' ) ) );
 		exit;
 	}
 
 	/**
-	 * Process full refund.
+	 * Process partial or full refund.
 	 */
-	private function process_immediate_refund( $order ) {
-		$amount  = $order->get_total();
+	private function process_immediate_refund( $order, $amount, $reason ) {
 		$user_id = $order->get_customer_id();
 
-		// Priority: TerraWallet (as requested in context)
+		// Priority: TerraWallet
 		if ( function_exists( 'woo_wallet' ) ) {
 			woo_wallet()->wallet->credit( 
 				$user_id, 
 				$amount, 
-				sprintf( __( 'Refund for Order #%d Cancelled during cool-off.', 'zerohold-shipping' ), $order->get_id() ) 
+				sprintf( __( 'Refund for Order #%d: %s', 'zerohold-shipping' ), $order->get_id(), $reason ) 
 			);
-			$order->add_order_note( sprintf( __( 'Refunded ₹%s to TerraWallet.', 'zerohold-shipping' ), $amount ) );
+			$order->add_order_note( sprintf( __( 'Refunded ₹%s to TerraWallet. Reason: %s', 'zerohold-shipping' ), $amount, $reason ) );
 			return;
 		}
 
 		// Fallback: Standard WooCommerce Refund
 		wc_create_refund( array(
 			'amount'         => $amount,
-			'reason'         => __( 'Buyer cancelled during cool-off.', 'zerohold-shipping' ),
+			'reason'         => $reason,
 			'order_id'       => $order->get_id(),
 			'refund_payment' => true,
 		) );
