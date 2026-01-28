@@ -33,7 +33,7 @@ class ShippingShareSettings {
 			'sanitize_callback' => 'floatval',
 			'default'           => 50,
 		] );
-		register_setting( 'zh_shipping_share_group', 'zh_hidden_cap_slabs', [
+		register_setting( 'zh_shipping_share_group', 'zh_vendor_hidden_cap_slabs', [
 			'sanitize_callback' => [ $this, 'sanitize_slabs' ],
 			'default'           => [],
 		] );
@@ -148,6 +148,13 @@ class ShippingShareSettings {
 		$vendor_emails_str = get_option( 'zh_excluded_vendor_emails', '' );
 		$vendor_emails     = array_filter( array_map( 'trim', explode( ',', $vendor_emails_str ) ) );
 
+		// Retrieve Vendor Slabs for rendering
+		$vendor_slabs = get_option( 'zh_vendor_hidden_cap_slabs', [] );
+		if ( empty( $vendor_slabs ) ) {
+			// Fallback to old name if new one is empty
+			$vendor_slabs = get_option( 'zh_hidden_cap_slabs', [] );
+		}
+
 		// Retrieve Retailer Excluded Emails
 		$retailer_emails_str = get_option( 'zh_excluded_retailer_emails', '' );
 		$retailer_emails     = array_filter( array_map( 'trim', explode( ',', $retailer_emails_str ) ) );
@@ -182,7 +189,7 @@ class ShippingShareSettings {
 					<h3><?php _e( 'Hidden Profit Cap (ZeroHold Profit)', 'zerohold-shipping' ); ?></h3>
 					<p class="description"><?php _e( 'An additional HIDDEN percentage added to the Vendor\'s deduction based on cost slabs.', 'zerohold-shipping' ); ?></p>
 					
-					<?php $this->render_slabs_table( 'zh_hidden_cap_slabs' ); ?>
+					<?php $this->render_slabs_table( 'zh_vendor_hidden_cap_slabs' ); ?>
 
 					<hr>
 

@@ -401,12 +401,22 @@ class VendorActions {
 						error_log( "------------------------------------------------------------" );
 						error_log( "  > Selected Courier: " . ( isset( $winner->courier_name ) ? $winner->courier_name : 'Unknown' ) . " ({$winner_platform})" );
 						error_log( "  > Source Cost:      ₹{$total_cost} (from Rate Quote)" );
+						
+						// Calculate Share and Cap for logging
+						$share_percent = (float) get_option( "zh_vendor_shipping_share_percentage", 50 );
+						$share_amount  = $total_cost * ( $share_percent / 100 );
+						$cap_amount    = $vendor_share_final - $share_amount;
+						
+						error_log( "  > Base Share (50%): ₹{$share_amount}" );
+						if ( $cap_amount > 0 ) {
+							error_log( "  > Profit Cap:       ₹{$cap_amount}" );
+						}
 						error_log( "  > FINAL DEDUCTION:  ₹{$vendor_share_final} (Calculated via PriceEngine)" );
 						error_log( "------------------------------------------------------------" );
 
-						if ( $cap_amount > 0 ) {
-							error_log( "ZSS: Applied Hidden Cap of ₹{$cap_amount} to Vendor #{$vendor_id}" );
-						}
+						// if ( $cap_amount > 0 ) {
+						// 	error_log( "ZSS: Applied Hidden Cap of ₹{$cap_amount} to Vendor #{$vendor_id}" );
+						// }
 
 						error_log( "ZSS: Stored forward shipping cost ₹{$vendor_share_final} in order meta for Order #{$order_id}" );
 

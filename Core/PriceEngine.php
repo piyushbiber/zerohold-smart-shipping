@@ -37,7 +37,14 @@ class PriceEngine {
 		}
 
 		// 3. Apply Hidden Profit Cap
-		$slabs = get_option( "zh_{$type}_hidden_cap_slabs", [] );
+		$option_name = "zh_{$type}_hidden_cap_slabs";
+		
+		// Fallback for legacy vendor naming (zh_hidden_cap_slabs)
+		if ( $type === 'vendor' && ! get_option( $option_name ) ) {
+			$option_name = "zh_hidden_cap_slabs";
+		}
+
+		$slabs = get_option( $option_name, [] );
 		if ( empty( $slabs ) ) {
 			return $share_amount;
 		}
@@ -47,7 +54,8 @@ class PriceEngine {
 			$max = ( isset( $slab['max'] ) && $slab['max'] !== '' ) ? floatval( $slab['max'] ) : PHP_FLOAT_MAX;
 			$pct = isset( $slab['percent'] ) ? floatval( $slab['percent'] ) : 0;
 
-			if ( $share_amount >= $min && $share_amount < $max ) {
+			// Logic: Inclusive of Max (<=) to handle case where share hits the exact bound
+			if ( $share_amount >= $min && $share_amount <= $max ) {
 				$cap = $share_amount * ( $pct / 100 );
 				return $share_amount + $cap;
 			}
