@@ -59,6 +59,9 @@ class OrderVisibilityManager {
 			$diff = (int)$oldest_unlock - time();
 			$time_str = date( 'Y-m-d H:i:s', $oldest_unlock );
 			$status_msg .= " | Next unlock at: $time_str (in $diff seconds)";
+			if ( $diff < 0 ) {
+				$status_msg .= " <span style='color:red;'>[OVERDUE - Auto-unlock failing]</span>";
+			}
 		}
 
 		echo "<div class='notice notice-warning is-dismissible'><p>$status_msg | <a href='" . add_query_arg( 'zh_force_unlock_visibility', '1' ) . "'>Force Unlock Now</a></p></div>";
@@ -211,23 +214,25 @@ class OrderVisibilityManager {
 			$ids_string = implode( ',', array_map( 'absint', $order_ids ) );
 			$wpdb->query( "UPDATE {$wpdb->postmeta} SET meta_value = 'yes' WHERE meta_key = '_zh_vendor_visible' AND post_id IN ($ids_string)" );
 
-			// 3. Optimized Cache Clearing (Bulk aware)
+			// 4. Surgical Cache Clearing (Track unique sellers in this batch)
+			$unique_sellers = [];
 			foreach ( $order_ids as $order_id ) {
-				// Clear Dokan Cache (Lightweight)
-				if ( class_exists( '\WeDevs\Dokan\Order\OrderCache' ) ) {
-					$seller_id = dokan_get_seller_id_by_order( $order_id );
-					if ( $seller_id ) {
+				$seller_id = dokan_get_seller_id_by_order( $order_id );
+				if ( $seller_id ) {
+					$unique_sellers[ $seller_id ] = true;
+					if ( class_exists( '\WeDevs\Dokan\Order\OrderCache' ) ) {
 						\WeDevs\Dokan\Order\OrderCache::delete( $seller_id, $order_id );
 					}
 				}
 				clean_post_cache( $order_id );
 			}
 
-			// 4. Single Global Flush (Heavyweight - call once per batch)
-			if ( function_exists( 'wp_cache_flush' ) ) wp_cache_flush();
-			if ( has_action( 'litespeed_purge_all' ) ) do_action( 'litespeed_purge_all' );
+			// 5. Purge only the affected vendors' dashboards
+			foreach ( array_keys( $unique_sellers ) as $s_id ) {
+				$this->purge_vendor_pages_surgical( $s_id );
+			}
 			
-			// error_log( "ZSS VISIBILITY: " . count($order_ids) . " orders unlocked in production batch." );
+			// error_log( "ZSS VISIBILITY: Optimized batch unlock complete for " . count($order_ids) . " orders." );
 		}
 	}
 
@@ -246,26 +251,37 @@ class OrderVisibilityManager {
 
 		global $wpdb;
 
-		// Use CAST and simplified JOIN if possible
+		// Use CAST and multiple JOINS to find orders that belong to this vendor
 		$order_ids = $wpdb->get_col( $wpdb->prepare(
-			"SELECT p.ID FROM {$wpdb->posts} p
+			"SELECT DISTINCT p.ID FROM {$wpdb->posts} p
 			 JOIN {$wpdb->postmeta} pm_v ON p.ID = pm_v.post_id AND pm_v.meta_key = '_zh_vendor_visible' AND pm_v.meta_value = 'no'
 			 JOIN {$wpdb->postmeta} pm_t ON p.ID = pm_t.post_id AND pm_t.meta_key = '_zh_visibility_unlock_at' AND CAST(pm_t.meta_value AS UNSIGNED) <= %d
 			 LEFT JOIN {$wpdb->prefix}dokan_orders do ON p.ID = do.order_id 
+			 LEFT JOIN {$wpdb->postmeta} pm_d ON p.ID = pm_d.post_id AND pm_d.meta_key = '_dokan_vendor_id'
 			 WHERE p.post_type = 'shop_order' 
-			 AND (do.seller_id = %d OR p.post_author = %d OR get_post_meta(p.ID, '_dokan_vendor_id', true) = %d)",
+			 AND (do.seller_id = %d OR p.post_author = %d OR pm_d.meta_value = %s)",
 			time(),
 			$vendor_id,
 			$vendor_id,
-			$vendor_id
+			(string)$vendor_id
 		) );
 
 		if ( ! empty( $order_ids ) ) {
 			foreach ( $order_ids as $order_id ) {
 				update_post_meta( $order_id, '_zh_vendor_visible', 'yes' );
-				$this->clear_order_visibility_cache( $order_id );
-				// error_log( "ZSS VISIBILITY: Order #$order_id unlocked via Lazy Unlock." );
+				
+				// Only do lightweight post-level cache clearing in the loop
+				clean_post_cache( $order_id );
+				if ( class_exists( '\WeDevs\Dokan\Order\OrderCache' ) ) {
+					$seller_id = dokan_get_seller_id_by_order( $order_id );
+					if ( $seller_id ) \WeDevs\Dokan\Order\OrderCache::delete( $seller_id, $order_id );
+				}
 			}
+
+			// Perform surgical purge for this specific vendor only
+			$this->purge_vendor_pages_surgical( $vendor_id );
+			
+			// error_log( "ZSS VISIBILITY: Vendor Dashboard optimized purge for " . count($order_ids) . " orders." );
 		}
 	}
 
@@ -285,12 +301,35 @@ class OrderVisibilityManager {
 	}
 
 	/**
+	 * Surgical purging for LiteSpeed and other caches
+	 */
+	public function purge_vendor_pages_surgical( $vendor_id ) {
+		if ( ! $vendor_id ) return;
+
+		// 1. Clear generic page cache if LiteSpeed is present
+		if ( class_exists( 'LiteSpeed\Purge' ) ) {
+			// Purge the vendor's specific order dashboard
+			if ( function_exists( 'dokan_get_navigation_url' ) ) {
+				$order_url = dokan_get_navigation_url( 'orders' );
+				\LiteSpeed\Purge::purge_url( $order_url );
+				
+				$dashboard_url = dokan_get_navigation_url( 'dashboard' );
+				\LiteSpeed\Purge::purge_url( $dashboard_url );
+			}
+		}
+
+		// 2. Trigger Dokan hooks that might be watched by cache plugins
+		do_action( 'dokan_vendor_orders_updated', $vendor_id );
+	}
+
+	/**
 	 * Forcefully clear Dokan and WordPress caches for an order.
 	 */
 	public function clear_order_visibility_cache( $order_id ) {
+		$seller_id = dokan_get_seller_id_by_order( $order_id );
+
 		// 1. Clear Dokan's internal order/count caches
 		if ( class_exists( '\WeDevs\Dokan\Order\OrderCache' ) ) {
-			$seller_id = dokan_get_seller_id_by_order( $order_id );
 			if ( $seller_id ) {
 				\WeDevs\Dokan\Order\OrderCache::delete( $seller_id, $order_id );
 			}
@@ -299,23 +338,9 @@ class OrderVisibilityManager {
 		// 2. Clear WordPress Core Post/Meta cache
 		clean_post_cache( $order_id );
 
-		// 3. Trigger generic cache purge for page caching plugins
-		if ( function_exists( 'wp_cache_flush' ) ) {
-			wp_cache_flush();
+		// 3. Surgical LiteSpeed Purge
+		if ( $seller_id ) {
+			$this->purge_vendor_pages_surgical( $seller_id );
 		}
-
-		// 4. Specific known plugin purges (Fastest/Lightest methods first)
-		do_action( 'w3tc_pgcache_flush' ); // W3 Total Cache
-		do_action( 'wp_rocket_purge_posts', $order_id ); // WP Rocket
-		if ( function_exists( 'wp_cache_clear_cache' ) ) wp_cache_clear_cache(); // WP Super Cache
-		
-		// 5. LiteSpeed Cache (LSCWP) - Added as requested
-		if ( class_exists( 'LiteSpeed\Purge' ) ) {
-			\LiteSpeed\Purge::purge_post( $order_id );
-		} elseif ( has_action( 'litespeed_purge_post' ) ) {
-			do_action( 'litespeed_purge_post', $order_id );
-		}
-		
-		// error_log( "ZSS VISIBILITY: Cache purged for Order #$order_id (including LiteSpeed if active)" );
 	}
 }
