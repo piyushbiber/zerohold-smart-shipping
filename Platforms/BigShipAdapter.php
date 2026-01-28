@@ -13,6 +13,16 @@ class BigShipAdapter implements PlatformInterface {
 
 	private $client;
 
+	const ENDPOINT_ADD_ORDER      = 'order/add/single';
+	const ENDPOINT_GET_QUOTES     = 'order/shipping/rates';
+	const ENDPOINT_MANIFEST_ADD   = 'order/manifest/add';
+	const ENDPOINT_SHIPMENT_DATA  = 'getShippingLabelAndInvoice';
+	const ENDPOINT_TRACK          = 'tracking';
+	const ENDPOINT_WALLET_BALANCE = 'Wallet/balance/get';
+	const ENDPOINT_WAREHOUSE_ADD  = 'warehouse/add';
+	const ENDPOINT_WAREHOUSE_LIST = 'warehouse/get/list';
+	const ENDPOINT_WAREHOUSE_EDIT = 'warehouse/edit';
+
 	public function __construct() {
 		$this->client = new BigShipClient();
 	}
@@ -178,7 +188,7 @@ class BigShipAdapter implements PlatformInterface {
         ];
 		
 		// error_log( "ZSS DEBUG: BigShip Draft Payload: " . print_r( $payload, true ) );
-		$response = $this->client->post( 'order/add/single', $payload );
+		$response = $this->client->post( self::ENDPOINT_ADD_ORDER, $payload );
 		// error_log( "ZSS DEBUG: BigShip Draft Response: " . print_r( $response, true ) );
 
 		if ( is_wp_error( $response ) ) {
@@ -234,7 +244,7 @@ class BigShipAdapter implements PlatformInterface {
 			'system_order_id'   => $system_order_id,
 		];
 
-		$response = $this->client->get( 'order/shipping/rates', $query );
+		$response = $this->client->get( self::ENDPOINT_GET_QUOTES, $query );
 
 		// error_log( "ZSS DEBUG: BigShip Rates Response: " . print_r( $response, true ) );
 
@@ -304,7 +314,7 @@ class BigShipAdapter implements PlatformInterface {
 		error_log( "ZSS DEBUG: BigShip - Manifesting Order..." );
 
 		// error_log( "ZSS DEBUG: BigShip Manifest Payload: " . print_r( $payload, true ) );
-		$response = $this->client->post( 'order/manifest/add', $payload );
+		$response = $this->client->post( self::ENDPOINT_MANIFEST_ADD, $payload );
 		error_log( "ZSS DEBUG: BigShip Manifest Response: " . print_r( $response, true ) );
 		
 		
@@ -326,7 +336,7 @@ class BigShipAdapter implements PlatformInterface {
 		];
 		
 		// error_log( "ZSS DEBUG: BigShip AWB Params (sh_id=1): " . print_r( $params, true ) );
-		$response = $this->client->post( 'getShippingLabelAndInvoice', $params );
+		$response = $this->client->post( self::ENDPOINT_SHIPMENT_DATA, $params );
 		// error_log( "ZSS DEBUG: BigShip AWB Response: " . print_r( $response, true ) );
         
         
@@ -355,7 +365,7 @@ class BigShipAdapter implements PlatformInterface {
 		];
 		
 		// error_log( "ZSS DEBUG: BigShip Label Params (sh_id=2): " . print_r( $params, true ) );
-		$response = $this->client->post( 'getShippingLabelAndInvoice', $params );
+		$response = $this->client->post( self::ENDPOINT_SHIPMENT_DATA, $params );
 		// error_log( "ZSS DEBUG: BigShip Label Response Base64 Length: " . ( isset( $response['data']['res_FileContent'] ) ? strlen( $response['data']['res_FileContent'] ) : 'N/A' ) );
         
         
@@ -392,7 +402,7 @@ class BigShipAdapter implements PlatformInterface {
 			'tracking_id'   => $tracking_id
 		];
 		
-		return $this->client->get( 'tracking', $params );
+		return $this->client->get( self::ENDPOINT_TRACK, $params );
 	}
 
 	public function estimateRates( $origin_pincode, $destination_pincodes, $slab ) {
@@ -500,7 +510,7 @@ class BigShipAdapter implements PlatformInterface {
 			$update_payload['pickup_address_id'] = $existing_id; // Check specific API docs if key differs
 			$update_payload['warehouse_id'] = $existing_id;      // Try both common keys
 
-			$update_res = $this->client->post( 'warehouse/edit', $update_payload );
+			$update_res = $this->client->post( self::ENDPOINT_WAREHOUSE_EDIT, $update_payload );
 
 			if ( ! is_wp_error( $update_res ) && ( isset( $update_res['data'] ) || isset( $update_res['status'] ) && $update_res['status'] ) ) {
 				// Update Success
@@ -510,7 +520,7 @@ class BigShipAdapter implements PlatformInterface {
 		}
 
 		// 3. CREATE LOGIC
-		$response = $this->client->post( 'warehouse/add', $payload );
+		$response = $this->client->post( self::ENDPOINT_WAREHOUSE_ADD, $payload );
 
 		if ( is_wp_error( $response ) ) {
 			return $response;
@@ -558,7 +568,7 @@ class BigShipAdapter implements PlatformInterface {
 		
 		do {
 			
-			$response = $this->client->get( 'warehouse/get/list', [
+			$response = $this->client->get( self::ENDPOINT_WAREHOUSE_LIST, [
 				'page_index' => $page_index,
 				'page_size'  => $page_size
 			] );
@@ -621,7 +631,7 @@ class BigShipAdapter implements PlatformInterface {
 
 	public function getWalletBalance() {
 		// Endpoint provided by user: api/Wallet/balance/get
-		$response = $this->client->get( 'Wallet/balance/get' );
+		$response = $this->client->get( self::ENDPOINT_WALLET_BALANCE );
 
 		// error_log( "ZSS DEBUG: BigShip Wallet Response: " . print_r( $response, true ) );
 

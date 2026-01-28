@@ -12,6 +12,15 @@ class ShiprocketAdapter implements PlatformInterface {
 
 	private $client;
 
+	const ENDPOINT_ORDER_CREATE     = 'orders/create/adhoc';
+	const ENDPOINT_SERVICEABILITY   = 'courier/serviceability/';
+	const ENDPOINT_AWB_ASSIGN       = 'courier/assign/awb';
+	const ENDPOINT_LABEL_GENERATE   = 'courier/generate/label';
+	const ENDPOINT_PICKUP_GENERATE  = 'courier/generate/pickup';
+	const ENDPOINT_TRACK_AWB        = 'courier/track/awb/';
+	const ENDPOINT_WALLET_BALANCE   = 'account/details/wallet-balance';
+	const ENDPOINT_WAREHOUSE_ADD    = 'settings/company/addpickup';
+
 	public function __construct() {
 		$this->client = new \Zerohold\Shipping\Integrations\ShiprocketClient();
 		
@@ -74,7 +83,7 @@ class ShiprocketAdapter implements PlatformInterface {
 
 		// Post to Shiprocket
 		// error_log( "ZSS DEBUG: Shiprocket Order Payload: " . print_r( $payload, true ) );
-		$response = $this->client->post( 'orders/create/adhoc', $payload );
+		$response = $this->client->post( self::ENDPOINT_ORDER_CREATE, $payload );
 		// error_log( "ZSS DEBUG: Shiprocket Order Response: " . print_r( $response, true ) );
 
 		return $response;
@@ -91,7 +100,7 @@ class ShiprocketAdapter implements PlatformInterface {
 			'cod'               => $cod,
 		];
 
-		$response = $this->client->get( 'courier/serviceability/', $query_args );
+		$response = $this->client->get( self::ENDPOINT_SERVICEABILITY, $query_args );
 		
 
 		if ( is_wp_error( $response ) ) {
@@ -129,7 +138,7 @@ class ShiprocketAdapter implements PlatformInterface {
 
 		// Post to Shiprocket
 		// error_log( "ZSS DEBUG: Shiprocket AWB Payload: " . print_r( $payload, true ) );
-		$response = $this->client->post( 'courier/assign/awb', $payload );
+		$response = $this->client->post( self::ENDPOINT_AWB_ASSIGN, $payload );
 		// error_log( "ZSS DEBUG: Shiprocket AWB Response: " . print_r( $response, true ) );
 
 		return $response;
@@ -138,7 +147,7 @@ class ShiprocketAdapter implements PlatformInterface {
 	public function getLabel( $shipment_id ) {
 		// error_log( "ZSS DEBUG: Shiprocket Label Request for ID: " . $shipment_id );
 		return $this->client->post(
-			'courier/generate/label',
+			self::ENDPOINT_LABEL_GENERATE,
 			[
 				'shipment_id' => [ $shipment_id ]
 			],
@@ -160,7 +169,7 @@ class ShiprocketAdapter implements PlatformInterface {
 		];
 
 		return $this->client->post(
-			'courier/generate/pickup',
+			self::ENDPOINT_PICKUP_GENERATE,
 			$payload,
 			true
 		);
@@ -168,7 +177,7 @@ class ShiprocketAdapter implements PlatformInterface {
 
 	public function track( $awb ) {
 		// GET /courier/track/awb/[AWB]
-		return $this->client->get( 'courier/track/awb/' . $awb );
+		return $this->client->get( self::ENDPOINT_TRACK_AWB . $awb );
 	}
 
 	public function estimateRates( $origin_pincode, $destination_pincodes, $slab ) {
@@ -244,7 +253,7 @@ class ShiprocketAdapter implements PlatformInterface {
 		];
 
 		// POST settings/company/addpickup
-		$response = $this->client->post( 'settings/company/addpickup', $payload );
+		$response = $this->client->post( self::ENDPOINT_WAREHOUSE_ADD, $payload );
 
 
 		if ( is_wp_error( $response ) ) {
@@ -287,7 +296,7 @@ class ShiprocketAdapter implements PlatformInterface {
 
 	public function getWalletBalance() {
 		// Precise endpoint provided by user
-		$response = $this->client->get( 'account/details/wallet-balance' );
+		$response = $this->client->get( self::ENDPOINT_WALLET_BALANCE );
 
 		// error_log( "ZSS DEBUG: Shiprocket Wallet Response: " . print_r( $response, true ) );
 

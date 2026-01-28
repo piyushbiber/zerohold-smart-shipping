@@ -7,8 +7,18 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 interface PlatformInterface {
+	/**
+	 * @param \Zerohold\Shipping\Models\Shipment $shipment
+	 * @return \Zerohold\Shipping\Models\RateQuote[]
+	 */
 	public function getRates( $shipment );
+
+	/**
+	 * @param \Zerohold\Shipping\Models\Shipment $shipment
+	 * @return array{shipment_id: string, awb_code?: string}
+	 */
 	public function createOrder( $shipment );
+
 	public function generateAWB( $shipment_id );
 	public function getLabel( $shipment_id );
 	public function track( $shipment_id );
