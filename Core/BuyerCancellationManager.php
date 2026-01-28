@@ -308,11 +308,6 @@ class BuyerCancellationManager {
 		<?php
 	}
 
-	/**
-	 * Refund vendor's shipping cost when buyer cancels after label generation.
-	 * 
-	 * @param int $order_id The order ID
-	 */
 	private function refund_vendor_shipping_cost( $order_id ) {
 		// Get the vendor ID
 		$vendor_id = 0;
@@ -338,35 +333,19 @@ class BuyerCancellationManager {
 			return;
 		}
 
-		// Credit vendor's wallet using TerraWallet
-		if ( function_exists( 'woo_wallet' ) ) {
-			try {
-				woo_wallet()->wallet->credit( 
-					$vendor_id, 
-					$shipping_cost, 
-					sprintf( __( 'Shipping refund for cancelled Order #%d', 'zerohold-shipping' ), $order_id )
-				);
+		// Store refund data in order meta - DokanStatementIntegration will pick it up automatically
+		update_post_meta( $order_id, '_zh_shipping_refund_amount', $shipping_cost );
+		update_post_meta( $order_id, '_zh_shipping_refund_date', current_time( 'mysql' ) );
+		update_post_meta( $order_id, '_zh_shipping_refunded_to_vendor', 'yes' );
 
-				// Add order note
-				$order = wc_get_order( $order_id );
-				if ( $order ) {
-					$order->add_order_note( 
-						sprintf( __( 'Vendor shipping cost (₹%s) refunded to wallet due to buyer cancellation.', 'zerohold-shipping' ), $shipping_cost )
-					);
-				}
-
-				// Mark as refunded to prevent double refunds
-				update_post_meta( $order_id, '_zh_shipping_refunded_to_vendor', 'yes' );
-				update_post_meta( $order_id, '_zh_shipping_refund_amount', $shipping_cost );
-				update_post_meta( $order_id, '_zh_shipping_refund_date', current_time( 'mysql' ) );
-
-				error_log( "ZSS: Refunded ₹{$shipping_cost} shipping cost to vendor #{$vendor_id} for order #{$order_id}" );
-
-			} catch ( \Exception $e ) {
-				error_log( "ZSS ERROR: Failed to refund vendor shipping - " . $e->getMessage() );
-			}
-		} else {
-			error_log( "ZSS ERROR: TerraWallet not available for vendor shipping refund" );
+		// Add order note
+		$order = wc_get_order( $order_id );
+		if ( $order ) {
+			$order->add_order_note( 
+				sprintf( __( 'Vendor shipping cost (₹%s) will be refunded via Dokan statement due to buyer cancellation.', 'zerohold-shipping' ), $shipping_cost )
+			);
 		}
+
+		error_log( "ZSS: Scheduled ₹{$shipping_cost} shipping refund for vendor #{$vendor_id} for order #{$order_id}" );
 	}
 }

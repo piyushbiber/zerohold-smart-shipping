@@ -239,10 +239,24 @@ class DokanStatementIntegration {
 			AND DATE(pm2.meta_value) <= %s
 		";
 
+		// 3. Fetch Shipping Refunds (Buyer Cancellations)
+		$sql_refund = "
+			SELECT 
+				pm1.post_id as order_id,
+				pm1.meta_value as shipping_cost,
+				pm2.meta_value as shipping_date,
+				'refund' as shipping_type
+			FROM {$wpdb->postmeta} pm1
+			INNER JOIN {$wpdb->postmeta} pm2 ON pm1.post_id = pm2.post_id AND pm2.meta_key = '_zh_shipping_refund_date'
+			WHERE pm1.meta_key = '_zh_shipping_refund_amount'
+			AND DATE(pm2.meta_value) >= %s
+			AND DATE(pm2.meta_value) <= %s
+		";
+
 		// Combine with UNION
-		$sql = "($sql_forward) UNION ($sql_return) ORDER BY shipping_date ASC";
+		$sql = "($sql_forward) UNION ($sql_return) UNION ($sql_refund) ORDER BY shipping_date ASC";
 		
-		$all_shipping_entries = $wpdb->get_results( $wpdb->prepare( $sql, $start_date, $end_date, $start_date, $end_date ) );
+		$all_shipping_entries = $wpdb->get_results( $wpdb->prepare( $sql, $start_date, $end_date, $start_date, $end_date, $start_date, $end_date ) );
 		
 		if ( empty( $all_shipping_entries ) ) {
 			error_log( "ZSS: No shipping cost meta found in database for these dates." );
@@ -270,11 +284,6 @@ class DokanStatementIntegration {
 		return $filtered_results;
 	}
 
-	/**
-	 * Transform order shipping data to Dokan entry format.
-	 * 
-	 * Shipping is a COST to vendor, so it goes in CREDIT column (vendor pays).
-	 */
 	private function transform_orders_to_dokan( $shipping_orders, $vendor_id ) {
 		$transformed = [];
 
@@ -283,21 +292,36 @@ class DokanStatementIntegration {
 			$shipping_cost = (float) $row->shipping_cost;
 			$shipping_date = $row->shipping_date;
 			$is_return = ( $row->shipping_type === 'return' );
+			$is_refund = ( $row->shipping_type === 'refund' );
 
 			// Title and Description
-			$title = $is_return ? __( 'Return Shipping', 'zerohold-shipping' ) : __( 'Forward Shipping', 'zerohold-shipping' );
-			$desc  = $is_return ? sprintf( 'Return Shipping for Order #%d', $order_id ) : sprintf( 'Forward Shipping for Order #%d', $order_id );
+			if ( $is_refund ) {
+				$title = __( 'Shipping Refund', 'zerohold-shipping' );
+				$desc  = sprintf( 'Shipping Refund for Order #%d (Buyer Cancellation)', $order_id );
+			} elseif ( $is_return ) {
+				$title = __( 'Return Shipping', 'zerohold-shipping' );
+				$desc  = sprintf( 'Return Shipping for Order #%d', $order_id );
+			} else {
+				$title = __( 'Forward Shipping', 'zerohold-shipping' );
+				$desc  = sprintf( 'Forward Shipping for Order #%d', $order_id );
+			}
 
 			// Shipping charge = vendor PAYS = CREDIT column (deducted from balance)
-			$debit  = 0;
-			$credit = $shipping_cost;
+			// Shipping refund = vendor RECEIVES = DEBIT column (added to balance)
+			if ( $is_refund ) {
+				$debit  = $shipping_cost;
+				$credit = 0;
+			} else {
+				$debit  = 0;
+				$credit = $shipping_cost;
+			}
 
 			// Build Dokan entry
 			$transformed[] = [
-				'id'           => ($is_return ? 'ZH-RET-' : 'ZH-SHIP-') . $order_id, // Unique ID
+				'id'           => ($is_refund ? 'ZH-REFUND-' : ($is_return ? 'ZH-RET-' : 'ZH-SHIP-')) . $order_id, // Unique ID
 				'vendor_id'    => $vendor_id,
 				'trn_id'       => $order_id,
-				'trn_type'     => 'zh_shipping',
+				'trn_type'     => $is_refund ? 'zh_shipping_refund' : 'zh_shipping',
 				'perticulars'  => $desc,
 				'debit'        => $debit,
 				'credit'       => $credit,
@@ -464,7 +488,11 @@ class DokanStatementIntegration {
 		$shipping_entries = $this->query_shipping_orders( $vendor_id, $start_date, $end_date );
 		$total_shipping_cost = 0;
 		foreach ( $shipping_entries as $entry ) {
-			$total_shipping_cost += (float) $entry->shipping_cost;
+			if ( $entry->shipping_type === 'refund' ) {
+				$total_shipping_cost -= (float) $entry->shipping_cost;
+			} else {
+				$total_shipping_cost += (float) $entry->shipping_cost;
+			}
 		}
 
 		// 2. REJECTION PENALTIES
@@ -538,8 +566,14 @@ class DokanStatementIntegration {
 			if ( ! isset( $daily_costs[ $date ] ) ) {
 				$daily_costs[ $date ] = 0;
 			}
-			$daily_costs[ $date ] += $cost;
-			$total_custom_shipping += $cost;
+			
+			if ( $entry->shipping_type === 'refund' ) {
+				$daily_costs[ $date ] -= $cost;
+				$total_custom_shipping -= $cost;
+			} else {
+				$daily_costs[ $date ] += $cost;
+				$total_custom_shipping += $cost;
+			}
 		}
 
 		// 1. UPDATE TOTALS
