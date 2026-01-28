@@ -15,9 +15,10 @@ class UITextFixer {
         add_filter( 'gettext', [ $this, 'swap_labels_php' ], 20, 3 );
         add_filter( 'gettext_with_context', [ $this, 'swap_labels_php' ], 20, 3 );
 
-        // LAYER 2: JavaScript hook (for React-based analytics/statements)
-        add_action( 'wp_footer', [ $this, 'inject_js_labels_fix' ], 99 );
-        add_action( 'admin_footer', [ $this, 'inject_js_labels_fix' ], 99 );
+        // LAYER 2: JavaScript hook (everywhere for now to ensure it works)
+        add_action( 'wp_head', [ $this, 'inject_js_labels_fix' ], 1 );
+        add_action( 'wp_footer', [ $this, 'inject_js_labels_fix' ], 999 );
+        add_action( 'admin_footer', [ $this, 'inject_js_labels_fix' ], 999 );
     }
 
     /**
@@ -41,57 +42,61 @@ class UITextFixer {
      * Inject JS to hook into wp.i18n for React-based UI.
      */
     public function inject_js_labels_fix() {
-        if ( ! function_exists( 'dokan_is_seller_dashboard' ) || ! dokan_is_seller_dashboard() ) {
-            return;
-        }
-
-        // Only inject on Statement Report page to prevent performance impact
-        $is_statement_page = ( isset( $_GET['path'] ) && strpos( $_GET['path'], 'statement' ) !== false ) || 
-                             ( isset( $_GET['chart'] ) && $_GET['chart'] === 'sales_statement' );
-
-        if ( ! $is_statement_page ) {
-            return;
-        }
-
+        // Broadly inject during debug
         ?>
         <script type="text/javascript">
             (function() {
-                const swap = (text) => {
-                    if (!text) return text;
-                    const map = {
-                        'Total Debit': 'Total Credit',
-                        'Total Credit': 'Total Debit',
-                        'Debit': 'Credit',
-                        'Credit': 'Debit',
-                        'debit': 'credit',
-                        'credit': 'debit'
-                    };
-                    return map[text] || text;
+                console.log('ZSS: UITextFixer Active');
+
+                const swapLabels = () => {
+                    const elements = document.querySelectorAll('h3, th, span, p, .components-button');
+                    elements.forEach(el => {
+                        if (!el.childNodes || el.childNodes.length === 0) return;
+                        
+                        // Check text content case-insensitively
+                        const text = el.innerText || '';
+                        
+                        // Total Debit -> Total Credit
+                        if (/Total Debit/i.test(text)) {
+                            el.innerHTML = el.innerHTML.replace(/Total Debit/gi, 'Total Credit');
+                        } 
+                        // Total Credit -> Total Debit
+                        else if (/Total Credit/i.test(text)) {
+                            el.innerHTML = el.innerHTML.replace(/Total Credit/gi, 'Total Debit');
+                        }
+                        // Debit (Exact) -> Credit
+                        else if (/^Debit$/i.test(text.trim())) {
+                            el.innerText = text.replace(/Debit/i, 'Credit');
+                        }
+                        // Credit (Exact) -> Debit
+                        else if (/^Credit$/i.test(text.trim())) {
+                            el.innerText = text.replace(/Credit/i, 'Debit');
+                        }
+                    });
                 };
 
-                // Hook into WordPress JS Translation system
-                if (window.wp && wp.hooks && wp.hooks.addFilter) {
-                    wp.hooks.addFilter('i18n.gettext', 'zss/swap-statement-labels', function(translated, text, domain) {
-                        if (domain === 'dokan' || domain === 'dokan-pro') {
-                            return swap(text);
-                        }
+                // 1. Initial run
+                setTimeout(swapLabels, 500);
+                setTimeout(swapLabels, 2000); // Second run for React lag
+
+                // 2. Mutation Observer for React dynamic changes
+                const observer = new MutationObserver(swapLabels);
+                observer.observe(document.body, { 
+                    childList: true, 
+                    subtree: true,
+                    characterData: true 
+                });
+
+                // 3. i18n Hook
+                if (window.wp && wp.hooks) {
+                    wp.hooks.addFilter('i18n.gettext', 'zss/swap', (translated, text) => {
+                        if (/Total Debit/i.test(text)) return translated.replace(/Total Debit/gi, 'Total Credit');
+                        if (/Total Credit/i.test(text)) return translated.replace(/Total Credit/gi, 'Total Debit');
+                        if (/^Debit$/i.test(text)) return 'Credit';
+                        if (/^Credit$/i.test(text)) return 'Debit';
                         return translated;
                     });
                 }
-
-                // Fallback for elements already rendered or bypassing i18n
-                const observer = new MutationObserver(() => {
-                    const cards = document.querySelectorAll('h3, th, span, p');
-                    cards.forEach(el => {
-                        const content = el.innerText.trim();
-                        if (content === 'Total Debit') el.innerText = 'Total Credit';
-                        else if (content === 'Total Credit') el.innerText = 'Total Debit';
-                        else if (content === 'Debit') el.innerText = 'Credit';
-                        else if (content === 'Credit') el.innerText = 'Debit';
-                    });
-                });
-
-                observer.observe(document.body, { childList: true, subtree: true });
             })();
         </script>
         <?php
