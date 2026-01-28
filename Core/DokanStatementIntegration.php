@@ -236,8 +236,8 @@ class DokanStatementIntegration {
 				pm2.meta_value as shipping_date,
 				'forward' as shipping_type
 			FROM {$wpdb->postmeta} pm1
-			INNER JOIN {$wpdb->postmeta} pm2 ON pm1.post_id = pm2.post_id AND pm2.meta_key = '_zh_shipping_date'
-			WHERE pm1.meta_key = '_zh_shipping_cost'
+			INNER JOIN {$wpdb->postmeta} pm2 ON pm1.post_id = pm2.post_id AND pm2.meta_key = '" . OrderStateManager::META_SHIPPING_DATE . "'
+			WHERE pm1.meta_key = '" . OrderStateManager::META_SHIPPING_COST . "'
 			AND DATE(pm2.meta_value) >= %s
 			AND DATE(pm2.meta_value) <= %s
 		";
@@ -264,8 +264,8 @@ class DokanStatementIntegration {
 				pm2.meta_value as shipping_date,
 				'refund' as shipping_type
 			FROM {$wpdb->postmeta} pm1
-			INNER JOIN {$wpdb->postmeta} pm2 ON pm1.post_id = pm2.post_id AND pm2.meta_key = '_zh_shipping_refund_date'
-			WHERE pm1.meta_key = '_zh_shipping_refund_amount'
+			INNER JOIN {$wpdb->postmeta} pm2 ON pm1.post_id = pm2.post_id AND pm2.meta_key = '" . OrderStateManager::META_SHIPPING_REFUND_DATE . "'
+			WHERE pm1.meta_key = '" . OrderStateManager::META_SHIPPING_REFUND_AMT . "'
 			AND DATE(pm2.meta_value) >= %s
 			AND DATE(pm2.meta_value) <= %s
 		";
@@ -661,9 +661,9 @@ class DokanStatementIntegration {
 				pm2.meta_value as total_deduction,
 				pm3.meta_value as penalty_date
 			FROM {$wpdb->postmeta} pm1
-			INNER JOIN {$wpdb->postmeta} pm2 ON pm1.post_id = pm2.post_id AND pm2.meta_key = '_zh_rejection_total'
-			INNER JOIN {$wpdb->postmeta} pm3 ON pm1.post_id = pm3.post_id AND pm3.meta_key = '_zh_rejection_date'
-			WHERE pm1.meta_key = '_zh_rejection_penalty'
+			INNER JOIN {$wpdb->postmeta} pm2 ON pm1.post_id = pm2.post_id AND pm2.meta_key = '" . OrderStateManager::META_REJECTION_TOTAL . "'
+			INNER JOIN {$wpdb->postmeta} pm3 ON pm1.post_id = pm3.post_id AND pm3.meta_key = '" . OrderStateManager::META_REJECTION_DATE . "'
+			WHERE pm1.meta_key = '" . OrderStateManager::META_REJECTION_PENALTY . "'
 			AND DATE(pm3.meta_value) >= %s
 			AND DATE(pm3.meta_value) <= %s
 		";

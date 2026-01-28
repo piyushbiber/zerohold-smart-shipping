@@ -49,7 +49,7 @@ class VendorShippingOrchestrator {
 		}
 
 		// Duplicate Guard
-		$label_status = get_post_meta( $order_id, '_zh_shiprocket_label_status', true );
+		$label_status = get_post_meta( $order_id, OrderStateManager::META_LABEL_STATUS, true );
 		if ( $label_status == 1 && $context === 'booking' ) {
 			return [ 'success' => false, 'message' => 'Label already generated.' ];
 		}
@@ -159,7 +159,7 @@ class VendorShippingOrchestrator {
 			if ( isset( $manifest_result['error'] ) ) {
 				return [ 'success' => false, 'message' => 'Manifest failed: ' . $manifest_result['error'] ];
 			}
-			update_post_meta( $order_id, '_zh_bigship_pickup_status', 1 );
+			update_post_meta( $order_id, OrderStateManager::META_PICKUP_STATUS, 1 );
 		}
 
 		// AWB Assignment
@@ -196,12 +196,12 @@ class VendorShippingOrchestrator {
 	}
 
 	private function storeMeta( $order_id, $shipment_id, $awb, $url, $platform ) {
-		update_post_meta( $order_id, '_zh_shiprocket_shipment_id', $shipment_id );
-		update_post_meta( $order_id, '_zh_shiprocket_awb', $awb );
-		update_post_meta( $order_id, '_zh_shiprocket_label_url', $url );
-		update_post_meta( $order_id, '_zh_shiprocket_label_status', 1 );
-		update_post_meta( $order_id, '_zh_shipping_platform', $platform );
-		update_post_meta( $order_id, '_zh_shipping_date', current_time( 'mysql' ) );
+		update_post_meta( $order_id, OrderStateManager::META_SHIPMENT_ID, $shipment_id );
+		update_post_meta( $order_id, OrderStateManager::META_AWB, $awb );
+		update_post_meta( $order_id, OrderStateManager::META_LABEL_URL, $url );
+		update_post_meta( $order_id, OrderStateManager::META_LABEL_STATUS, 1 );
+		update_post_meta( $order_id, OrderStateManager::META_PLATFORM, $platform );
+		update_post_meta( $order_id, OrderStateManager::META_SHIPPING_DATE, current_time( 'mysql' ) );
 	}
 
 	private function handleWalletDeduction( $order, $order_id, $winner ) {
@@ -216,7 +216,7 @@ class VendorShippingOrchestrator {
 			$total_cost = (float) $winner->base;
 			$vendor_share_final = \Zerohold\Shipping\Core\PriceEngine::calculate_share_and_cap( $total_cost, 'vendor', $vendor_id );
 			
-			update_post_meta( $order_id, '_zh_shipping_cost', $vendor_share_final );
+			OrderStateManager::record_shipping_cost( $order_id, $vendor_share_final );
 			
 			// Note: Wallet deduction is handled by DokanStatementIntegration reading _zh_shipping_cost
 		}
@@ -226,7 +226,7 @@ class VendorShippingOrchestrator {
 		if ( $platform === 'shiprocket' && method_exists( $adapter, 'generatePickup' ) ) {
 			$pickup = $adapter->generatePickup( $shipment_id );
 			if ( ! is_wp_error( $pickup ) && ( ( isset($pickup['pickup_status']) && $pickup['pickup_status'] == 1 ) || ( isset($pickup['message']) && stripos($pickup['message'], 'Queue') !== false ) ) ) {
-				update_post_meta( $order_id, '_zh_shiprocket_pickup_status', 1 );
+				update_post_meta( $order_id, OrderStateManager::META_PICKUP_STATUS, 1 );
 			}
 		}
 	}

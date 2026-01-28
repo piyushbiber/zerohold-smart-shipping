@@ -32,7 +32,7 @@ class VendorUI {
 		}
 
 		// Check label status
-		$label_status = (int) get_post_meta( $order_id, '_zh_shiprocket_label_status', true );
+		$label_status = (int) get_post_meta( $order_id, OrderStateManager::META_LABEL_STATUS, true );
 		
 		if ( $label_status !== 1 ) {
 			// Show "GENERATE LABEL" button

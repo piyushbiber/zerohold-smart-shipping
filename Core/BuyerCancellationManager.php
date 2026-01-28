@@ -87,9 +87,9 @@ class BuyerCancellationManager {
 			return $actions;
 		}
 
-		$is_visible   = get_post_meta( $order_id, '_zh_vendor_visible', true );
-		$unlock_at    = (int) get_post_meta( $order_id, '_zh_visibility_unlock_at', true );
-		$label_status = get_post_meta( $order_id, '_zh_shiprocket_label_status', true );
+		$is_visible   = OrderStateManager::get_visibility( $order_id );
+		$unlock_at    = (int) get_post_meta( $order_id, OrderStateManager::META_UNLOCK_AT, true );
+		$label_status = get_post_meta( $order_id, OrderStateManager::META_LABEL_STATUS, true );
 
 		// Determine Stage for Frontend
 		$stage = 'none';
@@ -149,16 +149,16 @@ class BuyerCancellationManager {
 		}
 
 		// Determine Stage
-		$is_visible   = get_post_meta( $order_id, '_zh_vendor_visible', true );
-		$unlock_at    = (int) get_post_meta( $order_id, '_zh_visibility_unlock_at', true );
-		$label_status = get_post_meta( $order_id, '_zh_shiprocket_label_status', true );
+		$is_visible   = OrderStateManager::get_visibility( $order_id );
+		$unlock_at    = (int) get_post_meta( $order_id, OrderStateManager::META_UNLOCK_AT, true );
+		$label_status = get_post_meta( $order_id, OrderStateManager::META_LABEL_STATUS, true );
 
 		$stage = 'none';
 		if ( $label_status == 1 ) {
 			$stage = 'post-label';
 		} else {
 			// No label exists - check if order is currently visible to vendor
-			if ( $is_visible === 'yes' ) {
+			if ( $is_visible === OrderStateManager::STATE_VISIBLE ) {
 				// Cool-off ended, order is visible - treat as post-cooloff for visibility purposes
 				$stage = 'post-cooloff-no-label';
 			} else {
@@ -176,15 +176,14 @@ class BuyerCancellationManager {
 			$note = __( 'Buyer cancelled order during cool-off window.', 'zerohold-shipping' );
 			
 			// Mark as PERMANENTLY hidden from vendor (since it was cancelled during cool-off)
-			update_post_meta( $order_id, '_zh_vendor_visible', 'no' ); 
-			update_post_meta( $order_id, '_zh_buyer_cancelled_during_cooloff', 'yes' );
+			OrderStateManager::mark_as_cancelled_cooloff( $order_id );
 		} elseif ( $stage === 'post-cooloff-no-label' ) {
 			// Cancelled after cool-off ended but before label generation
 			$note = __( 'Buyer cancelled order (No label generated).', 'zerohold-shipping' );
 			
 			// Keep order visible to vendor so they see the cancellation
-			update_post_meta( $order_id, '_zh_vendor_visible', 'yes' );
-			update_post_meta( $order_id, '_zh_buyer_cancelled_post_cooloff', 'yes' );
+			OrderStateManager::set_visibility( $order_id, OrderStateManager::STATE_VISIBLE );
+			update_post_meta( $order_id, OrderStateManager::META_CANCELLED_POST_COOL, 'yes' );
 		} else {
 			// Stage: post-label
 			// Get actual shipping amount paid by buyer (not vendor cost)
@@ -193,8 +192,8 @@ class BuyerCancellationManager {
 			$note = __( 'Buyer cancelled order after label generation.', 'zerohold-shipping' );
 			
 			// Ensure it remains visible to vendor so they see the cancellation
-			update_post_meta( $order_id, '_zh_vendor_visible', 'yes' );
-			update_post_meta( $order_id, '_zh_buyer_cancelled_post_label', 'yes' );
+			OrderStateManager::set_visibility( $order_id, OrderStateManager::STATE_VISIBLE );
+			update_post_meta( $order_id, OrderStateManager::META_CANCELLED_POST_LABEL, 'yes' );
 			
 			// REFUND VENDOR SHIPPING COST
 			// Since label was generated, vendor paid shipping. Now order is cancelled, refund that cost back to vendor.
@@ -259,9 +258,9 @@ class BuyerCancellationManager {
 		}
 		
 		// 1. Check if this was a buyer cancellation via meta flags or notes
-		$is_cooloff_cancel = get_post_meta( $order_id, '_zh_buyer_cancelled_during_cooloff', true ) === 'yes';
-		$is_post_cooloff   = get_post_meta( $order_id, '_zh_buyer_cancelled_post_cooloff', true ) === 'yes';
-		$is_post_label     = get_post_meta( $order_id, '_zh_buyer_cancelled_post_label', true ) === 'yes';
+		$is_cooloff_cancel = get_post_meta( $order_id, OrderStateManager::META_CANCELLED_COOLOFF, true ) === 'yes';
+		$is_post_cooloff   = get_post_meta( $order_id, OrderStateManager::META_CANCELLED_POST_COOL, true ) === 'yes';
+		$is_post_label     = get_post_meta( $order_id, OrderStateManager::META_CANCELLED_POST_LABEL, true ) === 'yes';
 		
 		if ( ! $is_cooloff_cancel && ! $is_post_cooloff && ! $is_post_label ) {
 			// Fallback: Check notes if meta isn't set (for older orders during transition)
@@ -336,10 +335,8 @@ class BuyerCancellationManager {
 			return;
 		}
 
-		// Store refund data in order meta - DokanStatementIntegration will pick it up automatically
-		update_post_meta( $order_id, '_zh_shipping_refund_amount', $shipping_cost );
-		update_post_meta( $order_id, '_zh_shipping_refund_date', current_time( 'mysql' ) );
-		update_post_meta( $order_id, '_zh_shipping_refunded_to_vendor', 'yes' );
+		// Store refund data in order meta - OrderStateManager will pick it up automatically
+		OrderStateManager::record_shipping_refund( $order_id, $shipping_cost );
 
 		// Add order note
 		$order = wc_get_order( $order_id );

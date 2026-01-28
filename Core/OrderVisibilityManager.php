@@ -52,21 +52,21 @@ class OrderVisibilityManager {
 		}
 
 		global $wpdb;
-		$no = $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key = '_zh_vendor_visible' AND meta_value = 'no' AND post_id NOT IN (SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_zh_buyer_cancelled_during_cooloff' AND meta_value = 'yes')" );
-		$yes = $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key = '_zh_vendor_visible' AND meta_value = 'yes'" );
+		$no = $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key = '" . OrderStateManager::META_VISIBILITY . "' AND meta_value = '" . OrderStateManager::STATE_HIDDEN . "' AND post_id NOT IN (SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '" . OrderStateManager::META_CANCELLED_COOLOFF . "' AND meta_value = 'yes')" );
+		$yes = $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key = '" . OrderStateManager::META_VISIBILITY . "' AND meta_value = '" . OrderStateManager::STATE_VISIBLE . "'" );
 		
 		// Find the oldest unlock only for orders that are NOT buyer-cancelled
 		$oldest_unlock = $wpdb->get_var( "
 			SELECT pm2.meta_value 
 			FROM {$wpdb->postmeta} pm1
 			JOIN {$wpdb->postmeta} pm2 ON pm1.post_id = pm2.post_id
-			WHERE pm1.meta_key = '_zh_vendor_visible' AND pm1.meta_value = 'no'
-			AND pm2.meta_key = '_zh_visibility_unlock_at'
-			AND pm1.post_id NOT IN (SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_zh_buyer_cancelled_during_cooloff' AND meta_value = 'yes')
+			WHERE pm1.meta_key = '" . OrderStateManager::META_VISIBILITY . "' AND pm1.meta_value = '" . OrderStateManager::STATE_HIDDEN . "'
+			AND pm2.meta_key = '" . OrderStateManager::META_UNLOCK_AT . "'
+			AND pm1.post_id NOT IN (SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '" . OrderStateManager::META_CANCELLED_COOLOFF . "' AND meta_value = 'yes')
 			ORDER BY (pm2.meta_value + 0) ASC LIMIT 1
 		" );
 		
-		$hidden_ids = $wpdb->get_col( "SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_zh_vendor_visible' AND meta_value = 'no' AND post_id NOT IN (SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_zh_buyer_cancelled_during_cooloff' AND meta_value = 'yes') LIMIT 10" );
+		$hidden_ids = $wpdb->get_col( "SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '" . OrderStateManager::META_VISIBILITY . "' AND meta_value = '" . OrderStateManager::STATE_HIDDEN . "' AND post_id NOT IN (SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '" . OrderStateManager::META_CANCELLED_COOLOFF . "' AND meta_value = 'yes') LIMIT 10" );
 		$ids_str = !empty($hidden_ids) ? implode(', ', $hidden_ids) : 'None';
 
 		$status_msg = "<strong>ZSS Visibility Debug:</strong> Hidden (no): $no | Visible (yes): $yes | Hidden IDs: $ids_str";
@@ -96,8 +96,8 @@ class OrderVisibilityManager {
 		if ( ! is_numeric( $order_id ) ) return;
 		
 		// Guard: If it's already set to 'no' or 'yes', don't re-init
-		$existing = get_post_meta( $order_id, '_zh_vendor_visible', true );
-		if ( $existing === 'no' || $existing === 'yes' ) {
+		$existing = OrderStateManager::get_visibility( $order_id );
+		if ( $existing === OrderStateManager::STATE_HIDDEN || $existing === OrderStateManager::STATE_VISIBLE || $existing === OrderStateManager::STATE_PERMANENTLY_HIDDEN ) {
 			return;
 		}
 
@@ -107,8 +107,8 @@ class OrderVisibilityManager {
 		$delay_seconds = ( $delay_unit === 'minutes' ) ? $delay_value * MINUTE_IN_SECONDS : $delay_value * HOUR_IN_SECONDS;
 		$unlock_at = time() + $delay_seconds;
 
-		update_post_meta( $order_id, '_zh_vendor_visible', 'no' );
-		update_post_meta( $order_id, '_zh_visibility_unlock_at', $unlock_at );
+		OrderStateManager::set_visibility( $order_id, OrderStateManager::STATE_HIDDEN );
+		update_post_meta( $order_id, OrderStateManager::META_UNLOCK_AT, $unlock_at );
 
 		// Schedule cron if not already scheduled
 		if ( ! wp_next_scheduled( $this->cron_hook ) ) {
@@ -135,17 +135,17 @@ class OrderVisibilityManager {
 			[
 				'relation' => 'OR',
 				[
-					'key'     => '_zh_vendor_visible',
+					'key'     => OrderStateManager::META_VISIBILITY,
 					'compare' => 'NOT EXISTS'
 				],
 				[
-					'key'     => '_zh_vendor_visible',
-					'value'   => 'yes',
+					'key'     => OrderStateManager::META_VISIBILITY,
+					'value'   => OrderStateManager::STATE_VISIBLE,
 					'compare' => '='
 				]
 			],
 			[
-				'key'     => '_zh_buyer_cancelled_during_cooloff',
+				'key'     => OrderStateManager::META_CANCELLED_COOLOFF,
 				'compare' => 'NOT EXISTS'
 			]
 		];
@@ -171,17 +171,17 @@ class OrderVisibilityManager {
 			[
 				'relation' => 'OR',
 				[
-					'key'     => '_zh_vendor_visible',
+					'key'     => OrderStateManager::META_VISIBILITY,
 					'compare' => 'NOT EXISTS'
 				],
 				[
-					'key'     => '_zh_vendor_visible',
-					'value'   => 'yes',
+					'key'     => OrderStateManager::META_VISIBILITY,
+					'value'   => OrderStateManager::STATE_VISIBLE,
 					'compare' => '='
 				]
 			],
 			[
-				'key'     => '_zh_buyer_cancelled_during_cooloff',
+				'key'     => OrderStateManager::META_CANCELLED_COOLOFF,
 				'compare' => 'NOT EXISTS'
 			]
 		];
@@ -232,9 +232,9 @@ class OrderVisibilityManager {
 			"SELECT DISTINCT pm1.post_id 
 			 FROM {$wpdb->postmeta} pm1
 			 JOIN {$wpdb->postmeta} pm2 ON pm1.post_id = pm2.post_id
-			 WHERE pm1.meta_key = '_zh_vendor_visible' AND pm1.meta_value = 'no'
-			 AND pm2.meta_key = '_zh_visibility_unlock_at' AND (pm2.meta_value + 0) <= %d
-			 AND pm1.post_id NOT IN (SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_zh_buyer_cancelled_during_cooloff' AND meta_value = 'yes')
+			 WHERE pm1.meta_key = '" . OrderStateManager::META_VISIBILITY . "' AND pm1.meta_value = '" . OrderStateManager::STATE_HIDDEN . "'
+			 AND pm2.meta_key = '" . OrderStateManager::META_UNLOCK_AT . "' AND (pm2.meta_value + 0) <= %d
+			 AND pm1.post_id NOT IN (SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '" . OrderStateManager::META_CANCELLED_COOLOFF . "' AND meta_value = 'yes')
 			 LIMIT %d",
 			$now,
 			$batch_limit
@@ -242,7 +242,7 @@ class OrderVisibilityManager {
 
 		if ( ! empty( $order_ids ) ) {
 			foreach ( $order_ids as $order_id ) {
-				update_post_meta( $order_id, '_zh_vendor_visible', 'yes' );
+				OrderStateManager::set_visibility( $order_id, OrderStateManager::STATE_VISIBLE );
 				clean_post_cache( $order_id );
 				
 				if ( class_exists( '\WeDevs\Dokan\Order\OrderCache' ) && function_exists( 'dokan_get_seller_id_by_order' ) ) {
@@ -270,16 +270,16 @@ class OrderVisibilityManager {
 			"SELECT DISTINCT pm1.post_id 
 			 FROM {$wpdb->postmeta} pm1
 			 JOIN {$wpdb->postmeta} pm2 ON pm1.post_id = pm2.post_id
-			 WHERE pm1.meta_key = '_zh_vendor_visible' AND pm1.meta_value = 'no'
-			 AND (pm2.meta_key = '_zh_visibility_unlock_at' AND (pm2.meta_value + 0) <= %d)
-			 AND pm1.post_id NOT IN (SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_zh_buyer_cancelled_during_cooloff' AND meta_value = 'yes')
+			 WHERE pm1.meta_key = '" . OrderStateManager::META_VISIBILITY . "' AND pm1.meta_value = '" . OrderStateManager::STATE_HIDDEN . "'
+			 AND (pm2.meta_key = '" . OrderStateManager::META_UNLOCK_AT . "' AND (pm2.meta_value + 0) <= %d)
+			 AND pm1.post_id NOT IN (SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '" . OrderStateManager::META_CANCELLED_COOLOFF . "' AND meta_value = 'yes')
 			 LIMIT 5",
 			time()
 		) );
 
 		if ( ! empty( $order_ids ) ) {
 			foreach ( $order_ids as $order_id ) {
-				update_post_meta( $order_id, '_zh_vendor_visible', 'yes' );
+				OrderStateManager::set_visibility( $order_id, OrderStateManager::STATE_VISIBLE );
 				clean_post_cache( $order_id );
 			}
 
@@ -307,8 +307,8 @@ class OrderVisibilityManager {
 		}
 
 		// 2. Normal Delayed Visibility
-		$status = get_post_meta( $order_id, '_zh_vendor_visible', true );
-		if ( $status === 'no' ) {
+		$status = OrderStateManager::get_visibility( $order_id );
+		if ( $status === OrderStateManager::STATE_HIDDEN || $status === OrderStateManager::STATE_PERMANENTLY_HIDDEN ) {
 			return false;
 		}
 		return $is_visible;
