@@ -41,10 +41,27 @@ class OrderVisibilityManager {
 
 	public function debug_admin_notice() {
 		if ( ! current_user_can( 'manage_options' ) ) return;
+
+		// Force unlock trigger
+		if ( isset( $_GET['zh_force_unlock_visibility'] ) ) {
+			$this->unlock_expired_orders();
+			echo "<div class='notice notice-success'><p>Manual visibility unlock executed.</p></div>";
+		}
+
 		global $wpdb;
 		$no = $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key = '_zh_vendor_visible' AND meta_value = 'no'" );
 		$yes = $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key = '_zh_vendor_visible' AND meta_value = 'yes'" );
-		echo "<div class='notice notice-warning is-dismissible'><p><strong>ZSS Visibility Debug:</strong> Hidden (no): $no | Visible (yes): $yes</p></div>";
+		
+		$oldest_unlock = $wpdb->get_var( "SELECT meta_value FROM {$wpdb->postmeta} WHERE meta_key = '_zh_visibility_unlock_at' AND post_id IN (SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_zh_vendor_visible' AND meta_value = 'no') ORDER BY CAST(meta_value AS UNSIGNED) ASC LIMIT 1" );
+
+		$status_msg = "<strong>ZSS Visibility Debug:</strong> Hidden (no): $no | Visible (yes): $yes";
+		if ( $oldest_unlock ) {
+			$diff = (int)$oldest_unlock - time();
+			$time_str = date( 'Y-m-d H:i:s', $oldest_unlock );
+			$status_msg .= " | Next unlock at: $time_str (in $diff seconds)";
+		}
+
+		echo "<div class='notice notice-warning is-dismissible'><p>$status_msg | <a href='" . add_query_arg( 'zh_force_unlock_visibility', '1' ) . "'>Force Unlock Now</a></p></div>";
 	}
 
 	/**
@@ -173,10 +190,11 @@ class OrderVisibilityManager {
 	public function unlock_expired_orders() {
 		global $wpdb;
 
+		// Use CAST for reliable numeric comparison
 		$order_ids = $wpdb->get_col( $wpdb->prepare(
 			"SELECT post_id FROM {$wpdb->postmeta} 
 			 WHERE meta_key = '_zh_visibility_unlock_at' 
-			 AND meta_value <= %d 
+			 AND CAST(meta_value AS UNSIGNED) <= %d 
 			 AND post_id IN (
 				SELECT post_id FROM {$wpdb->postmeta} 
 				WHERE meta_key = '_zh_vendor_visible' AND meta_value = 'no'
@@ -187,6 +205,7 @@ class OrderVisibilityManager {
 		if ( ! empty( $order_ids ) ) {
 			foreach ( $order_ids as $order_id ) {
 				update_post_meta( $order_id, '_zh_vendor_visible', 'yes' );
+				// error_log( "ZSS VISIBILITY: Order #$order_id unlocked via Cron." );
 			}
 		}
 	}
@@ -206,19 +225,24 @@ class OrderVisibilityManager {
 
 		global $wpdb;
 
+		// Use CAST and simplified JOIN if possible
 		$order_ids = $wpdb->get_col( $wpdb->prepare(
 			"SELECT p.ID FROM {$wpdb->posts} p
 			 JOIN {$wpdb->postmeta} pm_v ON p.ID = pm_v.post_id AND pm_v.meta_key = '_zh_vendor_visible' AND pm_v.meta_value = 'no'
-			 JOIN {$wpdb->postmeta} pm_t ON p.ID = pm_t.post_id AND pm_t.meta_key = '_zh_visibility_unlock_at' AND pm_t.meta_value <= %d
-			 JOIN {$wpdb->prefix}dokan_orders do ON p.ID = do.order_id AND do.seller_id = %d
-			 WHERE p.post_type = 'shop_order'",
+			 JOIN {$wpdb->postmeta} pm_t ON p.ID = pm_t.post_id AND pm_t.meta_key = '_zh_visibility_unlock_at' AND CAST(pm_t.meta_value AS UNSIGNED) <= %d
+			 LEFT JOIN {$wpdb->prefix}dokan_orders do ON p.ID = do.order_id 
+			 WHERE p.post_type = 'shop_order' 
+			 AND (do.seller_id = %d OR p.post_author = %d OR get_post_meta(p.ID, '_dokan_vendor_id', true) = %d)",
 			time(),
+			$vendor_id,
+			$vendor_id,
 			$vendor_id
 		) );
 
 		if ( ! empty( $order_ids ) ) {
 			foreach ( $order_ids as $order_id ) {
 				update_post_meta( $order_id, '_zh_vendor_visible', 'yes' );
+				// error_log( "ZSS VISIBILITY: Order #$order_id unlocked via Lazy Unlock." );
 			}
 		}
 	}
