@@ -48,23 +48,22 @@ class OrderVisibilityManager {
 			echo "<div class='notice notice-success'><p>Manual visibility unlock executed.</p></div>";
 		}
 
-		// Repair 31433 if it was buyer-cancelled (Context: User screenshot shows it as visible)
-		$status_31433 = get_post_status( 31433 );
-		if ( $status_31433 === 'wc-cancelled' ) {
-			if ( get_post_meta( 31433, '_zh_vendor_visible', true ) !== 'no' || ! get_post_meta( 31433, '_zh_buyer_cancelled_during_cooloff', true ) ) {
-				update_post_meta( 31433, '_zh_vendor_visible', 'no' );
-				update_post_meta( 31433, '_zh_buyer_cancelled_during_cooloff', 'yes' );
-				$this->clear_order_visibility_cache( 31433 );
-			}
-		}
-
 		global $wpdb;
-		$no = $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key = '_zh_vendor_visible' AND meta_value = 'no'" );
+		$no = $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key = '_zh_vendor_visible' AND meta_value = 'no' AND post_id NOT IN (SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_zh_buyer_cancelled_during_cooloff' AND meta_value = 'yes')" );
 		$yes = $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key = '_zh_vendor_visible' AND meta_value = 'yes'" );
 		
-		$oldest_unlock = $wpdb->get_var( "SELECT meta_value FROM {$wpdb->postmeta} WHERE meta_key = '_zh_visibility_unlock_at' AND post_id IN (SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_zh_vendor_visible' AND meta_value = 'no') ORDER BY (meta_value + 0) ASC LIMIT 1" );
+		// Find the oldest unlock only for orders that are NOT buyer-cancelled
+		$oldest_unlock = $wpdb->get_var( "
+			SELECT pm2.meta_value 
+			FROM {$wpdb->postmeta} pm1
+			JOIN {$wpdb->postmeta} pm2 ON pm1.post_id = pm2.post_id
+			WHERE pm1.meta_key = '_zh_vendor_visible' AND pm1.meta_value = 'no'
+			AND pm2.meta_key = '_zh_visibility_unlock_at'
+			AND pm1.post_id NOT IN (SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_zh_buyer_cancelled_during_cooloff' AND meta_value = 'yes')
+			ORDER BY (pm2.meta_value + 0) ASC LIMIT 1
+		" );
 		
-		$hidden_ids = $wpdb->get_col( "SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_zh_vendor_visible' AND meta_value = 'no' LIMIT 10" );
+		$hidden_ids = $wpdb->get_col( "SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_zh_vendor_visible' AND meta_value = 'no' AND post_id NOT IN (SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_zh_buyer_cancelled_during_cooloff' AND meta_value = 'yes') LIMIT 10" );
 		$ids_str = !empty($hidden_ids) ? implode(', ', $hidden_ids) : 'None';
 
 		$status_msg = "<strong>ZSS Visibility Debug:</strong> Hidden (no): $no | Visible (yes): $yes | Hidden IDs: $ids_str";
