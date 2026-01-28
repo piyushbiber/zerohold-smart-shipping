@@ -115,6 +115,10 @@ class BuyerCancellationManager {
 			return;
 		}
 
+		// Mark as PERMANENTLY hidden from vendor (since it was cancelled during cool-off)
+		update_post_meta( $order_id, '_zh_vendor_visible', 'no' ); 
+		update_post_meta( $order_id, '_zh_buyer_cancelled_during_cooloff', 'yes' );
+
 		// 1. Perform Refund
 		$this->process_immediate_refund( $order );
 

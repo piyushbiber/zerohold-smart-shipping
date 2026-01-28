@@ -48,6 +48,16 @@ class OrderVisibilityManager {
 			echo "<div class='notice notice-success'><p>Manual visibility unlock executed.</p></div>";
 		}
 
+		// Repair 31433 if it was buyer-cancelled (Context: User screenshot shows it as visible)
+		$status_31433 = get_post_status( 31433 );
+		if ( $status_31433 === 'wc-cancelled' ) {
+			if ( get_post_meta( 31433, '_zh_vendor_visible', true ) !== 'no' || ! get_post_meta( 31433, '_zh_buyer_cancelled_during_cooloff', true ) ) {
+				update_post_meta( 31433, '_zh_vendor_visible', 'no' );
+				update_post_meta( 31433, '_zh_buyer_cancelled_during_cooloff', 'yes' );
+				$this->clear_order_visibility_cache( 31433 );
+			}
+		}
+
 		global $wpdb;
 		$no = $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key = '_zh_vendor_visible' AND meta_value = 'no'" );
 		$yes = $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key = '_zh_vendor_visible' AND meta_value = 'yes'" );
@@ -108,25 +118,33 @@ class OrderVisibilityManager {
 	 * Filter Dokan orders to exclude those not yet visible.
 	 */
 	public function filter_dokan_orders( $args ) {
-		// Ensure we don't hide from admins in backend
+		// If in Admin Backend, allow seeing everything
 		if ( is_admin() && ! defined( 'DOING_AJAX' ) ) {
 			return $args;
 		}
 
+		// On Seller Dashboard, we MUST hide orders marked as 'no'
 		if ( ! isset( $args['meta_query'] ) ) {
 			$args['meta_query'] = [];
 		}
 
 		$args['meta_query'][] = [
-			'relation' => 'OR',
+			'relation' => 'AND',
 			[
-				'key'     => '_zh_vendor_visible',
-				'compare' => 'NOT EXISTS'
+				'relation' => 'OR',
+				[
+					'key'     => '_zh_vendor_visible',
+					'compare' => 'NOT EXISTS'
+				],
+				[
+					'key'     => '_zh_vendor_visible',
+					'value'   => 'yes',
+					'compare' => '='
+				]
 			],
 			[
-				'key'     => '_zh_vendor_visible',
-				'value'   => 'yes',
-				'compare' => '='
+				'key'     => '_zh_buyer_cancelled_during_cooloff',
+				'compare' => 'NOT EXISTS'
 			]
 		];
 
@@ -137,7 +155,7 @@ class OrderVisibilityManager {
 	 * Direct WooCommerce order query filter (Used by Dokan and others)
 	 */
 	public function filter_wc_order_query( $query_vars ) {
-		// Only run on frontend or AJAX
+		// If in Admin Backend, allow seeing everything
 		if ( is_admin() && ! defined( 'DOING_AJAX' ) ) {
 			return $query_vars;
 		}
@@ -147,15 +165,22 @@ class OrderVisibilityManager {
 		}
 
 		$query_vars['meta_query'][] = [
-			'relation' => 'OR',
+			'relation' => 'AND',
 			[
-				'key'     => '_zh_vendor_visible',
-				'compare' => 'NOT EXISTS'
+				'relation' => 'OR',
+				[
+					'key'     => '_zh_vendor_visible',
+					'compare' => 'NOT EXISTS'
+				],
+				[
+					'key'     => '_zh_vendor_visible',
+					'value'   => 'yes',
+					'compare' => '='
+				]
 			],
 			[
-				'key'     => '_zh_vendor_visible',
-				'value'   => 'yes',
-				'compare' => '='
+				'key'     => '_zh_buyer_cancelled_during_cooloff',
+				'compare' => 'NOT EXISTS'
 			]
 		];
 
@@ -207,6 +232,7 @@ class OrderVisibilityManager {
 			 JOIN {$wpdb->postmeta} pm2 ON pm1.post_id = pm2.post_id
 			 WHERE pm1.meta_key = '_zh_vendor_visible' AND pm1.meta_value = 'no'
 			 AND pm2.meta_key = '_zh_visibility_unlock_at' AND (pm2.meta_value + 0) <= %d
+			 AND pm1.post_id NOT IN (SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_zh_buyer_cancelled_during_cooloff' AND meta_value = 'yes')
 			 LIMIT %d",
 			$now,
 			$batch_limit
@@ -289,10 +315,19 @@ class OrderVisibilityManager {
 	 * Check if an order is visible to the vendor.
 	 */
 	public function is_order_visible( $is_visible, $order_id ) {
+		// Admin BACKEND sees all. 
+		// Frontend (Dashboard) follows the vendor's view for verification.
 		if ( is_admin() && ! defined( 'DOING_AJAX' ) ) {
 			return $is_visible;
 		}
 
+		// 1. Permanent Hidden: Buyer cancelled during cool-off
+		$is_buyer_cancelled = get_post_meta( $order_id, '_zh_buyer_cancelled_during_cooloff', true );
+		if ( $is_buyer_cancelled === 'yes' ) {
+			return false;
+		}
+
+		// 2. Normal Delayed Visibility
 		$status = get_post_meta( $order_id, '_zh_vendor_visible', true );
 		if ( $status === 'no' ) {
 			return false;
