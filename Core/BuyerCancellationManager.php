@@ -154,8 +154,14 @@ class BuyerCancellationManager {
 		if ( $label_status == 1 ) {
 			$stage = 'post-label';
 		} else {
-			// If no label, it's cancellable with full refund (Cool-off OR Gap)
-			$stage = 'cool-off';
+			// No label exists - check if order is currently visible to vendor
+			if ( $is_visible === 'yes' ) {
+				// Cool-off ended, order is visible - treat as post-cooloff for visibility purposes
+				$stage = 'post-cooloff-no-label';
+			} else {
+				// Still in cool-off window (hidden from vendor)
+				$stage = 'cool-off';
+			}
 		}
 
 		// 1. Calculate Refund Amount
@@ -169,6 +175,12 @@ class BuyerCancellationManager {
 			// Mark as PERMANENTLY hidden from vendor (since it was cancelled during cool-off)
 			update_post_meta( $order_id, '_zh_vendor_visible', 'no' ); 
 			update_post_meta( $order_id, '_zh_buyer_cancelled_during_cooloff', 'yes' );
+		} elseif ( $stage === 'post-cooloff-no-label' ) {
+			// Cancelled after cool-off ended but before label generation
+			$note = __( 'Buyer cancelled order. Full refund processed (no label was generated).', 'zerohold-shipping' );
+			
+			// Keep order visible to vendor so they see the cancellation
+			update_post_meta( $order_id, '_zh_vendor_visible', 'yes' );
 		} else {
 			// Stage: post-label
 			// Get actual shipping amount paid by buyer (not vendor cost)
