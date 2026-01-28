@@ -22,6 +22,9 @@ class BuyerCancellationManager {
 
 		// 3. Style and Confirmation
 		add_action( 'wp_head', [ $this, 'add_frontend_scripts' ] );
+		
+		// 4. Show cancellation notice on vendor order detail page
+		add_action( 'dokan_order_detail_after_order_items', [ $this, 'show_vendor_cancellation_notice' ] );
 	}
 
 	/**
@@ -234,5 +237,70 @@ class BuyerCancellationManager {
 			'order_id'       => $order->get_id(),
 			'refund_payment' => true,
 		) );
+	}
+
+	/**
+	 * Show a prominent notice on vendor order detail page if order was cancelled by buyer.
+	 */
+	public function show_vendor_cancellation_notice( $order ) {
+		if ( ! $order ) return;
+		
+		$order_id = is_numeric( $order ) ? $order : $order->get_id();
+		$order_obj = wc_get_order( $order_id );
+		
+		if ( ! $order_obj || $order_obj->get_status() !== 'cancelled' ) {
+			return;
+		}
+		
+		// Check if this was a buyer cancellation
+		$cancelled_during_cooloff = get_post_meta( $order_id, '_zh_buyer_cancelled_during_cooloff', true );
+		
+		// Check order notes for buyer cancellation
+		$notes = wc_get_order_notes( array(
+			'order_id' => $order_id,
+			'limit' => 5,
+		) );
+		
+		$is_buyer_cancelled = false;
+		$cancellation_message = '';
+		
+		foreach ( $notes as $note ) {
+			if ( stripos( $note->content, 'Buyer cancelled' ) !== false ) {
+				$is_buyer_cancelled = true;
+				$cancellation_message = $note->content;
+				break;
+			}
+		}
+		
+		if ( ! $is_buyer_cancelled && $cancelled_during_cooloff !== 'yes' ) {
+			return;
+		}
+		
+		// Determine the message
+		if ( $cancelled_during_cooloff === 'yes' ) {
+			$message = __( '⚠️ This order was cancelled by the retailer during the cool-off window.', 'zerohold-shipping' );
+		} else {
+			$message = __( '⚠️ This order was cancelled by the retailer.', 'zerohold-shipping' );
+		}
+		
+		?>
+		<div class="zh-buyer-cancellation-notice" style="
+			background: #fff3cd;
+			border-left: 4px solid #ff9800;
+			padding: 15px 20px;
+			margin: 20px 0;
+			border-radius: 4px;
+			box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+		">
+			<h4 style="margin: 0 0 8px 0; color: #856404; font-size: 16px;">
+				<?php echo esc_html( $message ); ?>
+			</h4>
+			<?php if ( $cancellation_message ) : ?>
+				<p style="margin: 0; color: #856404; font-size: 14px;">
+					<?php echo esc_html( $cancellation_message ); ?>
+				</p>
+			<?php endif; ?>
+		</div>
+		<?php
 	}
 }
