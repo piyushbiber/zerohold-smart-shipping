@@ -182,13 +182,10 @@ class BigShipAdapter implements PlatformInterface {
 		// error_log( "ZSS DEBUG: BigShip Draft Response: " . print_r( $response, true ) );
 
 		if ( is_wp_error( $response ) ) {
+            error_log( "ZSS ERROR: BigShip createDraftOrder WP_Error: " . $response->get_error_message() );
 			return $response;
 		}
 
-        // Response Pattern: { data: "system_order_id is 1000252960", ... }
-        // We need to extract the ID from the string string!
-        // Documentation says: "data": "system_order_id is 1000252960"
-        
         $data_str = $response['data'] ?? '';
         
         if ( preg_match( '/system_order_id is (\d+)/', $data_str, $matches ) ) {
@@ -197,7 +194,7 @@ class BigShipAdapter implements PlatformInterface {
 
         // BigShip 202/Exists Handling
         if ( (isset($response['responseCode']) && $response['responseCode'] == 202) || stripos($data_str, 'exists') !== false || stripos($response['message'] ?? '', 'exists') !== false ) {
-            error_log("ZSS DEBUG: BigShip Order already exists. Attempting recovery...");
+            error_log("ZSS DEBUG: BigShip Order already exists. Response: " . print_r($response, true));
             
             // Try to parse ID from message if data is empty but message has it
             if ( preg_match( '/is (\d+)/', $response['message'] ?? '', $m ) ) {
@@ -213,6 +210,7 @@ class BigShipAdapter implements PlatformInterface {
             return new \WP_Error( 'bigship_exists_no_id', 'BigShip order exists but system ID could not be recovered.' );
         }
 
+        error_log( "ZSS ERROR: BigShip createDraftOrder failed with no ID. Raw Response: " . print_r( $response, true ) );
 		return null; 
 	}
 

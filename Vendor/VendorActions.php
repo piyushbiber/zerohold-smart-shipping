@@ -235,17 +235,29 @@ class VendorActions {
 			// DEBUG: Log Rate Selection
 			error_log( "ZSS DEBUG: Rate Selection Trace for Order #{$order_id}" );
 			error_log( "------------------------------------------------------------" );
-			foreach ($active_quotes as $p_name => $rates) {
-				error_log( "  Platform: {$p_name}" );
+			foreach ($quotes as $p_name => $rates) {
+				$excluded = in_array( $p_name, $excluded_platforms ) ? ' [EXCLUDED: Low Balance]' : '';
+				error_log( "  Platform: {$p_name}{$excluded}" );
 				if (is_array($rates)) {
-					foreach ($rates as $r) {
-						$r_name = is_object($r) ? $r->courier_name : ($r['courier_name'] ?? 'Unknown');
-						$r_base = is_object($r) ? $r->base : ($r['base'] ?? '?');
-						error_log( "    - {$r_name}: ₹{$r_base}" );
+					if (empty($rates)) {
+						error_log( "    - (No rates returned)" );
+					} else {
+						foreach ($rates as $r) {
+							$r_name = is_object($r) ? $r->courier_name : ($r['courier_name'] ?? 'Unknown');
+							$r_base = is_object($r) ? $r->base : ($r['base'] ?? '?');
+							error_log( "    - {$r_name}: ₹{$r_base}" );
+						}
 					}
+				} else {
+					error_log( "    - Error: Quotes data is not an array (" . gettype($rates) . ")" );
 				}
 			}
-			error_log( "  > WINNER: " . (isset($winner->courier_name) ? $winner->courier_name : 'Unknown') . " (₹" . (isset($winner->base) ? $winner->base : '?') . ")" );
+			
+			if ( $winner ) {
+				error_log( "  > WINNER: " . (isset($winner->courier_name) ? $winner->courier_name : 'Unknown') . " (₹" . (isset($winner->base) ? $winner->base : '?') . ")" );
+			} else {
+				error_log( "  > WINNER: NONE (No valid rates found after filtering)" );
+			}
 			error_log( "------------------------------------------------------------" );
 
 			if ( ! $winner ) {
