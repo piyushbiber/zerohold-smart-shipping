@@ -95,9 +95,9 @@ class OrderVisibilityManager {
 
 		if ( ! is_numeric( $order_id ) ) return;
 		
-		// Guard: If it's already set to 'no' or 'yes', don't re-init
+		// Guard: If it's already set to 'no' or 'yes' (or permanently hidden), don't re-init
 		$existing = OrderStateManager::get_visibility( $order_id );
-		if ( $existing === OrderStateManager::STATE_HIDDEN || $existing === OrderStateManager::STATE_VISIBLE || $existing === OrderStateManager::STATE_PERMANENTLY_HIDDEN ) {
+		if ( ! empty( $existing ) ) {
 			return;
 		}
 

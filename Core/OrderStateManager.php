@@ -60,7 +60,7 @@ class OrderStateManager {
 			return self::STATE_PERMANENTLY_HIDDEN;
 		}
 		
-		return $state ?: self::STATE_HIDDEN;
+		return $state;
 	}
 
 	/**
