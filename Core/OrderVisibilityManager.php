@@ -205,6 +205,7 @@ class OrderVisibilityManager {
 		if ( ! empty( $order_ids ) ) {
 			foreach ( $order_ids as $order_id ) {
 				update_post_meta( $order_id, '_zh_vendor_visible', 'yes' );
+				$this->clear_order_visibility_cache( $order_id );
 				// error_log( "ZSS VISIBILITY: Order #$order_id unlocked via Cron." );
 			}
 		}
@@ -242,6 +243,7 @@ class OrderVisibilityManager {
 		if ( ! empty( $order_ids ) ) {
 			foreach ( $order_ids as $order_id ) {
 				update_post_meta( $order_id, '_zh_vendor_visible', 'yes' );
+				$this->clear_order_visibility_cache( $order_id );
 				// error_log( "ZSS VISIBILITY: Order #$order_id unlocked via Lazy Unlock." );
 			}
 		}
@@ -260,5 +262,40 @@ class OrderVisibilityManager {
 			return false;
 		}
 		return $is_visible;
+	}
+
+	/**
+	 * Forcefully clear Dokan and WordPress caches for an order.
+	 */
+	public function clear_order_visibility_cache( $order_id ) {
+		// 1. Clear Dokan's internal order/count caches
+		if ( class_exists( '\WeDevs\Dokan\Order\OrderCache' ) ) {
+			$seller_id = dokan_get_seller_id_by_order( $order_id );
+			if ( $seller_id ) {
+				\WeDevs\Dokan\Order\OrderCache::delete( $seller_id, $order_id );
+			}
+		}
+
+		// 2. Clear WordPress Core Post/Meta cache
+		clean_post_cache( $order_id );
+
+		// 3. Trigger generic cache purge for page caching plugins
+		if ( function_exists( 'wp_cache_flush' ) ) {
+			wp_cache_flush();
+		}
+
+		// 4. Specific known plugin purges (Fastest/Lightest methods first)
+		do_action( 'w3tc_pgcache_flush' ); // W3 Total Cache
+		do_action( 'wp_rocket_purge_posts', $order_id ); // WP Rocket
+		if ( function_exists( 'wp_cache_clear_cache' ) ) wp_cache_clear_cache(); // WP Super Cache
+		
+		// 5. LiteSpeed Cache (LSCWP) - Added as requested
+		if ( class_exists( 'LiteSpeed\Purge' ) ) {
+			\LiteSpeed\Purge::purge_post( $order_id );
+		} elseif ( has_action( 'litespeed_purge_post' ) ) {
+			do_action( 'litespeed_purge_post', $order_id );
+		}
+		
+		// error_log( "ZSS VISIBILITY: Cache purged for Order #$order_id (including LiteSpeed if active)" );
 	}
 }
