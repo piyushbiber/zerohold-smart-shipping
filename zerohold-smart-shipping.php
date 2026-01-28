@@ -115,6 +115,20 @@ class ZeroHoldSmartShipping {
 		// Register Shipping Method
 		add_filter( 'woocommerce_shipping_methods', [ $this, 'register_shipping_method' ] );
 		add_action( 'woocommerce_shipping_init', [ $this, 'init_shipping_method' ] );
+
+		// Register Custom Cron Schedules
+		add_filter( 'cron_schedules', [ $this, 'register_custom_cron_schedules' ] );
+	}
+
+	/**
+	 * Define custom cron intervals.
+	 */
+	public function register_custom_cron_schedules( $schedules ) {
+		$schedules['five_minutes'] = [
+			'interval' => 300,
+			'display'  => esc_html__( 'Every 5 Minutes' ),
+		];
+		return $schedules;
 	}
 
 	/**

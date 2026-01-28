@@ -52,9 +52,12 @@ class OrderVisibilityManager {
 		$no = $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key = '_zh_vendor_visible' AND meta_value = 'no'" );
 		$yes = $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key = '_zh_vendor_visible' AND meta_value = 'yes'" );
 		
-		$oldest_unlock = $wpdb->get_var( "SELECT meta_value FROM {$wpdb->postmeta} WHERE meta_key = '_zh_visibility_unlock_at' AND post_id IN (SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_zh_vendor_visible' AND meta_value = 'no') ORDER BY CAST(meta_value AS UNSIGNED) ASC LIMIT 1" );
+		$oldest_unlock = $wpdb->get_var( "SELECT meta_value FROM {$wpdb->postmeta} WHERE meta_key = '_zh_visibility_unlock_at' AND post_id IN (SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_zh_vendor_visible' AND meta_value = 'no') ORDER BY (meta_value + 0) ASC LIMIT 1" );
+		
+		$hidden_ids = $wpdb->get_col( "SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_zh_vendor_visible' AND meta_value = 'no' LIMIT 10" );
+		$ids_str = !empty($hidden_ids) ? implode(', ', $hidden_ids) : 'None';
 
-		$status_msg = "<strong>ZSS Visibility Debug:</strong> Hidden (no): $no | Visible (yes): $yes";
+		$status_msg = "<strong>ZSS Visibility Debug:</strong> Hidden (no): $no | Visible (yes): $yes | Hidden IDs: $ids_str";
 		if ( $oldest_unlock ) {
 			$diff = (int)$oldest_unlock - time();
 			$time_str = date( 'Y-m-d H:i:s', $oldest_unlock );
@@ -193,46 +196,37 @@ class OrderVisibilityManager {
 	public function unlock_expired_orders() {
 		global $wpdb;
 
-		// 1. Fetch only a manageable batch (e.g. 100 at a time) to prevent timeouts
-		$batch_limit = apply_filters( 'zh_order_visibility_unlock_batch_size', 100 );
+		// 1. Fetch only a manageable batch
+		$batch_limit = apply_filters( 'zh_order_visibility_unlock_batch_size', 50 ); // Smaller batch for stability
+		$now = time();
 
+		// Use + 0 to force numeric comparison in SQL
 		$order_ids = $wpdb->get_col( $wpdb->prepare(
-			"SELECT post_id FROM {$wpdb->postmeta} 
-			 WHERE meta_key = '_zh_visibility_unlock_at' 
-			 AND CAST(meta_value AS UNSIGNED) <= %d 
-			 AND post_id IN (
-				SELECT post_id FROM {$wpdb->postmeta} 
-				WHERE meta_key = '_zh_vendor_visible' AND meta_value = 'no'
-			 )
+			"SELECT DISTINCT pm1.post_id 
+			 FROM {$wpdb->postmeta} pm1
+			 JOIN {$wpdb->postmeta} pm2 ON pm1.post_id = pm2.post_id
+			 WHERE pm1.meta_key = '_zh_vendor_visible' AND pm1.meta_value = 'no'
+			 AND pm2.meta_key = '_zh_visibility_unlock_at' AND (pm2.meta_value + 0) <= %d
 			 LIMIT %d",
-			time(),
+			$now,
 			$batch_limit
 		) );
 
 		if ( ! empty( $order_ids ) ) {
-			// 2. Perform bulk update
-			$ids_string = implode( ',', array_map( 'absint', $order_ids ) );
-			$wpdb->query( "UPDATE {$wpdb->postmeta} SET meta_value = 'yes' WHERE meta_key = '_zh_vendor_visible' AND post_id IN ($ids_string)" );
-
-			// 4. Surgical Cache Clearing (Track unique sellers in this batch)
-			$unique_sellers = [];
+			// error_log( "ZSS VISIBILITY CRON: Found " . count( $order_ids ) . " orders to unlock." );
+			
 			foreach ( $order_ids as $order_id ) {
-				$seller_id = dokan_get_seller_id_by_order( $order_id );
-				if ( $seller_id ) {
-					$unique_sellers[ $seller_id ] = true;
-					if ( class_exists( '\WeDevs\Dokan\Order\OrderCache' ) ) {
-						\WeDevs\Dokan\Order\OrderCache::delete( $seller_id, $order_id );
-					}
-				}
-				clean_post_cache( $order_id );
-			}
-
-			// 5. Purge only the affected vendors' dashboards
-			foreach ( array_keys( $unique_sellers ) as $s_id ) {
-				$this->purge_vendor_pages_surgical( $s_id );
+				// Use the standard WP function to ensure cache is cleared correctly
+				update_post_meta( $order_id, '_zh_vendor_visible', 'yes' );
+				
+				// Standard cleanup
+				$this->clear_order_visibility_cache( $order_id );
+				
+				// error_log( "ZSS VISIBILITY CRON: Order #$order_id is now VISIBLE." );
 			}
 			
-			// error_log( "ZSS VISIBILITY: Optimized batch unlock complete for " . count($order_ids) . " orders." );
+			// Global LiteSpeed batch purge
+			if ( class_exists( 'LiteSpeed\Purge' ) ) \LiteSpeed\Purge::purge_all();
 		}
 	}
 
@@ -251,17 +245,17 @@ class OrderVisibilityManager {
 
 		global $wpdb;
 
-		// Use CAST and multiple JOINS to find orders that belong to this vendor
+		// Find overdue orders for this vendor specifically
 		$order_ids = $wpdb->get_col( $wpdb->prepare(
-			"SELECT DISTINCT p.ID FROM {$wpdb->posts} p
-			 JOIN {$wpdb->postmeta} pm_v ON p.ID = pm_v.post_id AND pm_v.meta_key = '_zh_vendor_visible' AND pm_v.meta_value = 'no'
-			 JOIN {$wpdb->postmeta} pm_t ON p.ID = pm_t.post_id AND pm_t.meta_key = '_zh_visibility_unlock_at' AND CAST(pm_t.meta_value AS UNSIGNED) <= %d
-			 LEFT JOIN {$wpdb->prefix}dokan_orders do ON p.ID = do.order_id 
-			 LEFT JOIN {$wpdb->postmeta} pm_d ON p.ID = pm_d.post_id AND pm_d.meta_key = '_dokan_vendor_id'
-			 WHERE p.post_type = 'shop_order' 
-			 AND (do.seller_id = %d OR p.post_author = %d OR pm_d.meta_value = %s)",
+			"SELECT DISTINCT pm1.post_id 
+			 FROM {$wpdb->postmeta} pm1
+			 JOIN {$wpdb->postmeta} pm2 ON pm1.post_id = pm2.post_id
+			 LEFT JOIN {$wpdb->prefix}dokan_orders do ON pm1.post_id = do.order_id
+			 LEFT JOIN {$wpdb->postmeta} pm3 ON pm1.post_id = pm3.post_id AND pm3.meta_key = '_dokan_vendor_id'
+			 WHERE pm1.meta_key = '_zh_vendor_visible' AND pm1.meta_value = 'no'
+			 AND pm2.meta_key = '_zh_visibility_unlock_at' AND (pm2.meta_value + 0) <= %d
+			 AND (do.seller_id = %d OR pm3.meta_value = %s)",
 			time(),
-			$vendor_id,
 			$vendor_id,
 			(string)$vendor_id
 		) );
