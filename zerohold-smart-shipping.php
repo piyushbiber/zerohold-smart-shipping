@@ -99,9 +99,6 @@ class ZeroHoldSmartShipping {
 		// Bug Fix: Isolate Shipping from Vendor Total
 		new Core\DokanEarningsFix();
 
-		// UI Text Fixes (Terminology Swap)
-		new Core\UITextFixer();
-
 		// Initialize Platforms (for testing auth)
 		new Platforms\ShiprocketAdapter();
 
