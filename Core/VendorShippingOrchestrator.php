@@ -214,7 +214,7 @@ class VendorShippingOrchestrator {
 
 		if ( $vendor_id ) {
 			$total_cost = (float) $winner->base;
-			$vendor_share_final = \Zerohold\Shipping\Core\PriceEngine::calculate_share_and_cap( $total_cost, 'vendor', $vendor_id );
+			$vendor_share_final = \Zerohold\Shipping\Core\OrderStateManager::calculate_share_and_cap( $total_cost, 'vendor', $vendor_id );
 			
 			OrderStateManager::record_shipping_cost( $order_id, $vendor_share_final );
 			

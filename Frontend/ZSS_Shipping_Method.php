@@ -146,7 +146,7 @@ class ZSS_Shipping_Method extends \WC_Shipping_Method {
 		if ( $best_rate && $best_rate->base > 0 ) {
 			// Apply Retailer (Buyer) Share and Cap logic
 			$buyer_id    = get_current_user_id();
-			$final_cost  = \Zerohold\Shipping\Core\PriceEngine::calculate_share_and_cap( $best_rate->base, 'retailer', $buyer_id );
+			$final_cost  = \Zerohold\Shipping\Core\OrderStateManager::calculate_share_and_cap( $best_rate->base, 'retailer', $buyer_id );
 
 			$rate = array(
 				'id'      => $this->id . '_' . $best_rate->platform,

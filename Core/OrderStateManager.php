@@ -108,4 +108,113 @@ class OrderStateManager {
 		update_post_meta( $order_id, self::META_SHIPPING_REFUND_DATE, current_time( 'mysql' ) );
 		update_post_meta( $order_id, self::META_SHIPPING_REFUNDED, 'yes' );
 	}
+
+	/**
+	 * Calculate Rejection Financials (Hardened)
+	 * 
+	 * RULE: Reversal amount must EXCLUDE ZeroHold shipping fees.
+	 * Penalty is calculated based on this reversal amount.
+	 */
+	public static function calculate_rejection_data( $order_id ) {
+		$order = wc_get_order( $order_id );
+		if ( ! $order ) return null;
+
+		$full_total    = (float) $order->get_total();
+		$shipping_cost = (float) get_post_meta( $order_id, self::META_SHIPPING_COST, true );
+		
+		// If shipping cost isn't in meta, check WC shipping methods (Fallback)
+		if ( $shipping_cost <= 0 ) {
+			foreach ( $order->get_shipping_methods() as $method ) {
+				$shipping_cost += (float) $method->get_cost();
+			}
+		}
+
+		$reversal_base = $full_total - $shipping_cost;
+		
+		// Penalty Math (Standard 25%)
+		$fixed_fee = (float) get_option( 'zh_rejection_penalty_fixed', 0 );
+		$percent   = (float) get_option( 'zh_rejection_penalty_percent', 25 );
+		
+		$penalty = $fixed_fee + ( $reversal_base * ( $percent / 100 ) );
+		$total_deduction = $reversal_base + $penalty;
+
+		return [
+			'reversal_base'   => $reversal_base,   // The correctly isolated order value
+			'penalty_amount'  => $penalty,        // The 25% fee based on isolated value
+			'total_deduction' => $total_deduction  // The total amount removed from vendor (125%)
+		];
+	}
+
+	/**
+	 * Mark Rejection with Centralized Data
+	 */
+	public static function record_rejection( $order_id, $reason = '' ) {
+		$data = self::calculate_rejection_data( $order_id );
+		if ( ! $data ) return;
+
+		update_post_meta( $order_id, self::META_REJECTION_PENALTY, $data['penalty_amount'] );
+		update_post_meta( $order_id, self::META_REJECTION_TOTAL, $data['total_deduction'] );
+		update_post_meta( $order_id, self::META_REJECTION_DATE, current_time( 'mysql' ) );
+		
+		update_post_meta( $order_id, '_zh_vendor_rejected', 'yes' );
+		if ( $reason ) {
+			update_post_meta( $order_id, '_zh_vendor_reject_reason', $reason );
+		}
+	}
+
+	/**
+	 * Calculates the final share for a specific user type (vendor or retailer).
+	 * THE 10th SHIELD: Isolated Financial Formula.
+	 * 
+	 * @param float  $base_price Original carrier price.
+	 * @param string $type       'vendor' or 'retailer'
+	 * @param int    $user_id    The user ID to check for exclusions.
+	 * @return float Adjusted price (share + cap).
+	 */
+	public static function calculate_share_and_cap( $base_price, $type = 'vendor', $user_id = 0 ) {
+		if ( $base_price <= 0 ) return 0;
+
+		// 1. Calculate Base Share
+		$share_percent = (float) get_option( "zh_{$type}_shipping_share_percentage", 50 );
+		$share_amount  = $base_price * ( $share_percent / 100 );
+
+		// 2. Check Exclusions
+		$excluded_emails_str = get_option( "zh_excluded_{$type}_emails", "" );
+		if ( ! empty( $excluded_emails_str ) && $user_id ) {
+			$user = get_user_by( "id", $user_id );
+			if ( $user ) {
+				$user_email = strtolower( trim( $user->user_email ) );
+				$excluded_list = array_map( "trim", explode( ",", strtolower( $excluded_emails_str ) ) );
+				if ( in_array( $user_email, $excluded_list ) ) {
+					return $share_amount; // Return base share without cap
+				}
+			}
+		}
+
+		// 3. Apply Hidden Profit Cap
+		$option_name = "zh_{$type}_hidden_cap_slabs";
+		
+		// Fallback for legacy vendor naming (zh_hidden_cap_slabs)
+		if ( $type === 'vendor' && ! get_option( $option_name ) ) {
+			$option_name = "zh_hidden_cap_slabs";
+		}
+
+		$slabs = get_option( $option_name, [] );
+		if ( empty( $slabs ) ) {
+			return $share_amount;
+		}
+
+		foreach ( $slabs as $slab ) {
+			$min = isset( $slab['min'] ) ? floatval( $slab['min'] ) : 0;
+			$max = ( isset( $slab['max'] ) && $slab['max'] !== '' ) ? floatval( $slab['max'] ) : PHP_FLOAT_MAX;
+			$pct = isset( $slab['percent'] ) ? floatval( $slab['percent'] ) : 0;
+
+			if ( $share_amount >= $min && $share_amount <= $max ) {
+				$cap = $share_amount * ( $pct / 100 );
+				return $share_amount + $cap;
+			}
+		}
+
+		return $share_amount;
+	}
 }

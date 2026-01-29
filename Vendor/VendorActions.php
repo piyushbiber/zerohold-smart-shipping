@@ -320,12 +320,12 @@ class VendorActions {
 		// 3. Cache Check
 		$cached = \Zerohold\Shipping\Core\EstimateCache::get( $vendor_id, $origin_pin, $final_slab );
 		if ( $cached ) {
-			$cached['vendor_min'] = \Zerohold\Shipping\Core\PriceEngine::calculate_share_and_cap( $cached['min_price'], 'vendor', $vendor_id );
-			$cached['vendor_max'] = \Zerohold\Shipping\Core\PriceEngine::calculate_share_and_cap( $cached['max_price'], 'vendor', $vendor_id );
+			$cached['vendor_min'] = \Zerohold\Shipping\Core\OrderStateManager::calculate_share_and_cap( $cached['min_price'], 'vendor', $vendor_id );
+			$cached['vendor_max'] = \Zerohold\Shipping\Core\OrderStateManager::calculate_share_and_cap( $cached['max_price'], 'vendor', $vendor_id );
 			
 			// Add Retailer (Buyer) info to cache display if needed
-			$cached['buyer_min'] = \Zerohold\Shipping\Core\PriceEngine::calculate_share_and_cap( $cached['min_price'], 'retailer' );
-			$cached['buyer_max'] = \Zerohold\Shipping\Core\PriceEngine::calculate_share_and_cap( $cached['max_price'], 'retailer' );
+			$cached['buyer_min'] = \Zerohold\Shipping\Core\OrderStateManager::calculate_share_and_cap( $cached['min_price'], 'retailer' );
+			$cached['buyer_max'] = \Zerohold\Shipping\Core\OrderStateManager::calculate_share_and_cap( $cached['max_price'], 'retailer' );
 			
 			wp_send_json_success( array_merge( $cached, [ 'is_cached' => true, 'slab_info' => $slab_data ] ) );
 		}
@@ -395,11 +395,11 @@ class VendorActions {
 			$range_min = floor($min);
 			$range_max = ceil($max ?: $min * 1.2); 
 
-			$you_min   = \Zerohold\Shipping\Core\PriceEngine::calculate_share_and_cap( $range_min, 'vendor', $vendor_id );
-			$you_max   = \Zerohold\Shipping\Core\PriceEngine::calculate_share_and_cap( $range_max, 'vendor', $vendor_id );
+			$you_min   = \Zerohold\Shipping\Core\OrderStateManager::calculate_share_and_cap( $range_min, 'vendor', $vendor_id );
+			$you_max   = \Zerohold\Shipping\Core\OrderStateManager::calculate_share_and_cap( $range_max, 'vendor', $vendor_id );
 
-			$buyer_min = \Zerohold\Shipping\Core\PriceEngine::calculate_share_and_cap( $range_min, 'retailer' );
-			$buyer_max = \Zerohold\Shipping\Core\PriceEngine::calculate_share_and_cap( $range_max, 'retailer' );
+			$buyer_min = \Zerohold\Shipping\Core\OrderStateManager::calculate_share_and_cap( $range_min, 'retailer' );
+			$buyer_max = \Zerohold\Shipping\Core\OrderStateManager::calculate_share_and_cap( $range_max, 'retailer' );
 
 			$zone_breakdown[ $zone_key ] = [
 				'label'     => $zone_labels[ $zone_key ] ?? $zone_key,
@@ -419,8 +419,8 @@ class VendorActions {
 		$sum_min = ! empty( $all_prices ) ? min( $all_prices ) : 0;
 		$sum_max = ! empty( $all_prices ) ? max( $all_prices ) : 0;
 
-		$vendor_sum_min = \Zerohold\Shipping\Core\PriceEngine::calculate_share_and_cap( $sum_min, 'vendor', $vendor_id );
-		$vendor_sum_max = \Zerohold\Shipping\Core\PriceEngine::calculate_share_and_cap( $sum_max, 'vendor', $vendor_id );
+		$vendor_sum_min = \Zerohold\Shipping\Core\OrderStateManager::calculate_share_and_cap( $sum_min, 'vendor', $vendor_id );
+		$vendor_sum_max = \Zerohold\Shipping\Core\OrderStateManager::calculate_share_and_cap( $sum_max, 'vendor', $vendor_id );
 
 		// 6. Save to Cache
 		\Zerohold\Shipping\Core\EstimateCache::set( 
