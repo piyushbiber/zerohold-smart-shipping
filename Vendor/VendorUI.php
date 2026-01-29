@@ -35,20 +35,20 @@ class VendorUI {
 		$label_status = (int) get_post_meta( $order_id, OrderStateManager::META_LABEL_STATUS, true );
 		
 		if ( $label_status !== 1 ) {
-			// Show "GENERATE LABEL" button
+			// Show "GENERATE LABEL" button (Compact Icon Mode)
 			$actions['generate_label'] = [
 				'url'    => '#',
 				'name'   => __( 'Generate Label', 'zerohold-shipping' ),
 				'action' => 'generate-label',
-				'icon'   => '<span class="zss-generate-label zss-action-btn">GENERATE LABEL</span>',
+				'icon'   => '<i class="fas fa-barcode zss-icon-btn zss-generate-label-icon" data-toggle="tooltip" title="' . esc_attr__( 'Generate Label', 'zerohold-shipping' ) . '"></i>',
 			];
 		} else {
-			// Show "DOWNLOAD LABEL" button
+			// Show "DOWNLOAD LABEL" button (Compact Icon Mode)
 			$actions['download_label'] = [
 				'url'    => admin_url( 'admin-post.php?action=zh_download_label&order_id=' . $order_id ),
 				'name'   => __( 'Download Label', 'zerohold-shipping' ),
 				'action' => 'download-label',
-				'icon'   => '<span class="zss-download-label zss-action-btn">DOWNLOAD LABEL</span>',
+				'icon'   => '<i class="fas fa-download zss-icon-btn zss-download-label-icon" data-toggle="tooltip" title="' . esc_attr__( 'Download Label', 'zerohold-shipping' ) . '"></i>',
 			];
 		
 			// Check pickup status and add badge (supports both Shiprocket and BigShip)
@@ -61,7 +61,7 @@ class VendorUI {
 					'url'    => '#',
 					'name'   => __( 'Pickup Scheduled', 'zerohold-shipping' ),
 					'action' => 'pickup-status',
-					'icon'   => '<span class="zss-pickup-scheduled zss-status-badge">✓ PICKUP SCHEDULED</span>',
+					'icon'   => '<i class="fas fa-truck-loading zss-status-icon" style="color: #27ae60;" data-toggle="tooltip" title="' . esc_attr__( 'Pickup Scheduled', 'zerohold-shipping' ) . '"></i>',
 				];
 			}
 
@@ -71,18 +71,18 @@ class VendorUI {
 				$handover_done = (int) get_post_meta( $order_id, '_zh_return_handover_confirmed', true );
 				if ( ! $handover_done ) {
 					$actions['confirm_handover'] = [
-						'url'    => '#',
-						'name'   => __( 'Confirm Handover', 'zerohold-shipping' ),
-						'action' => 'confirm-handover',
-						'icon'   => '<span class="zss-confirm-handover zss-action-btn" style="background:#e67e22!important; color:white!important; border:0!important;">CONFIRM HANDOVER</span>',
-					];
-				} else {
-					$actions['handover_done'] = [
-						'url'    => '#',
-						'name'   => __( 'Received', 'zerohold-shipping' ),
-						'action' => 'handover-done',
-						'icon'   => '<span class="zss-handover-done zss-status-badge">✓ RECEIVED AT WH</span>',
-					];
+					'url'    => '#',
+					'name'   => __( 'Confirm Handover', 'zerohold-shipping' ),
+					'action' => 'confirm-handover',
+					'icon'   => '<i class="fas fa-hand-holding-box zss-icon-btn zss-confirm-handover-icon" style="background:#e67e22; color:white; border:1px solid #d35400;" data-toggle="tooltip" title="' . esc_attr__( 'Confirm Handover', 'zerohold-shipping' ) . '"></i>',
+				];
+			} else {
+				$actions['handover_done'] = [
+					'url'    => '#',
+					'name'   => __( 'Received', 'zerohold-shipping' ),
+					'action' => 'handover-done',
+					'icon'   => '<i class="fas fa-check-circle zss-status-icon" style="color: #27ae60;" data-toggle="tooltip" title="' . esc_attr__( 'Received at Warehouse', 'zerohold-shipping' ) . '"></i>',
+				];
 				}
 			}
 		}
@@ -118,58 +118,31 @@ class VendorUI {
 		}
 
 		?>
-		<style>
-			/* ZSS Shipping Button Styles */
-			.dokan-order-action a span.zss-action-btn {
-				display: inline-block;
-				padding: 4px 10px;
-				border-radius: 4px;
-				font-weight: 600;
-				font-size: 12px;
-				border: 1px solid #ddd;
-				background: #f8f9fa;
-				color: #333;
-				margin: 2px;
-				text-decoration: none;
-				line-height: 1.4;
+	<style>
+			/* ZSS COMPACT ICON STYLES */
+			.zss-icon-btn {
+				font-size: 16px !important;
+				padding: 8px !important;
+				border-radius: 4px !important;
+				transition: all 0.2s !important;
 			}
+			.zss-generate-label-icon { color: #6c5ce7; background: #f3f0ff; border: 1px solid #dcd3ff; }
+			.zss-generate-label-icon:hover { background: #6c5ce7; color: #fff; }
+			
+			.zss-download-label-icon { color: #3498db; background: #ebf5fb; border: 1px solid #d6eaf8; }
+			.zss-download-label-icon:hover { background: #3498db; color: #fff; }
 
-			.zss-generate-label {
-				background: #6c5ce7 !important;
-				color: white !important;
-				border: 0 !important;
-				padding: 5px 12px !important;
+			.zss-status-icon { font-size: 16px; margin: 0 5px; }
+
+			/* Action Column Hardening */
+			.dokan-order-action {
+				white-space: nowrap !important;
+				min-width: 140px !important;
+				text-align: center !important;
 			}
-
-			.zss-generate-label:hover {
-				background: #5b4bc4 !important;
-				color: #fff !important;
-			}
-
-			.zss-download-label {
-				background: #3498db !important;
-				color: white !important;
-				border: 0 !important;
-				padding: 5px 12px !important;
-			}
-
-			.zss-download-label:hover {
-				background: #2980b9 !important;
-				color: #fff !important;
-			}
-
-			.zss-pickup-scheduled {
-				background: #27ae60 !important;
-				color: white !important;
-				border: 0 !important;
-				padding: 5px 12px !important;
-				cursor: default !important;
-				font-size: 11px !important;
-			}
-
-			.zss-pickup-scheduled:hover {
-				background: #229954 !important;
-				color: #fff !important;
+			.dokan-order-action a {
+				margin: 0 2px !important;
+				display: inline-block !important;
 			}
 
 			.zss-spinner {
@@ -197,6 +170,31 @@ class VendorUI {
 
 		<script>
 		jQuery(function($) {
+			// ZERO-DRIFT SHIELD: Ensure structure stability and rename headers
+			function zssRefineDashboardUI() {
+				const $table = $('.dokan-table-striped');
+				if (!$table.length) return;
+
+				// 1. Rename ACTION to PROCESS ORDER
+				$table.find('thead th').each(function(){
+					const text = $(this).text().trim().toLowerCase();
+					if (text === 'action' || text === 'actions') {
+						$(this).text('PROCESS ORDER').css('text-align', 'center');
+					}
+				});
+
+				// 2. Initialize Tooltips (Essential for Icon-only mode)
+				if ($.fn.tooltip) {
+					$('[data-toggle="tooltip"]').tooltip();
+				}
+			}
+
+			// Run on load and after AJAX
+			zssRefineDashboardUI();
+			$(document).ajaxComplete(function() {
+				setTimeout(zssRefineDashboardUI, 100);
+			});
+
 			// Helper function to get order ID
 			function getOrderId(btn) {
 				let $row = btn.closest('tr');
@@ -206,11 +204,13 @@ class VendorUI {
 					let match = href.match(/order_id=(\d+)/);
 					return match ? match[1] : null;
 				}
-				return null;
+				// Support for responsive rows
+				let $parentRow = btn.closest('.dokan-orders-content').find('tr').has(btn);
+				return null; 
 			}
 
-			// GENERATE LABEL (Using delegation on document for better compatibility)
-			$(document).on('click', '.zss-generate-label, .dokan-order-action [action="generate-label"], .generate-label', function(e){
+			// GENERATE LABEL (Icon-based delegation)
+			$(document).on('click', '.zss-generate-label-icon, .dokan-order-action a[href*="generate-label"]', function(e){
 				e.preventDefault();
 				
 				let btn = $(this);
@@ -262,8 +262,8 @@ class VendorUI {
 				});
 			});
 
-			// CONFIRM HANDOVER
-			$(document).on('click', '.zss-confirm-handover, .dokan-order-action [action="confirm-handover"], .confirm-handover', function(e){
+			// CONFIRM HANDOVER (Icon-based delegation)
+			$(document).on('click', '.zss-confirm-handover-icon, .dokan-order-action a[href*="confirm-handover"]', function(e){
 				e.preventDefault();
 				
 				let btn = $(this);
