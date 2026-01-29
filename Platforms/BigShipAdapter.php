@@ -232,9 +232,9 @@ class BigShipAdapter implements PlatformInterface {
 			return [];
 		}
 	
-	// Store system_order_id for later use in createOrder (only if order exists)
+	// Store system_order_id for later use in Vault
 	if ( ! empty( $shipment->order_id ) && is_numeric( $shipment->order_id ) ) {
-		update_post_meta( $shipment->order_id, '_zh_bigship_system_order_id', $system_order_id );
+		\Zerohold\Shipping\Core\OrderStateManager::record_bigship_id( $shipment->order_id, $system_order_id );
 	}
 
 		// 2. Fetch Rates

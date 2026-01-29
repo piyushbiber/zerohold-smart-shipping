@@ -66,7 +66,9 @@ class ReturnManager {
 		$label_res = $adapter->getLabel( $ship_id );
 
 		if ( isset( $label_res['label_url'] ) ) {
-			update_post_meta( $order_id, '_zh_return_label_url', $label_res['label_url'] );
+			OrderStateManager::record_return_data( $order_id, [
+				'label_url' => $label_res['label_url']
+			] );
 			wp_send_json_success( 'Label URL updated' );
 		}
 
@@ -199,23 +201,17 @@ class ReturnManager {
 			$awb_response = $adapter->generateAWB( $response['shipment_id'] );
 			$label_res    = $adapter->getLabel( $response['shipment_id'] );
 
-			update_post_meta( $order_id, '_zh_return_shipment_id', $response['shipment_id'] );
-			update_post_meta( $order_id, '_zh_return_platform', $winner->platform );
-			update_post_meta( $order_id, '_zh_return_courier', $winner->courier );
-			
-			if ( isset( $awb_response['awb_code'] ) ) {
-				update_post_meta( $order_id, '_zh_return_awb', $awb_response['awb_code'] );
-			}
-			if ( isset( $label_res['label_url'] ) ) {
-				update_post_meta( $order_id, '_zh_return_label_url', $label_res['label_url'] );
-			}
+			// Store Return Data inside Vault (Fixes naming inconsistency)
+			OrderStateManager::record_return_data( $order_id, [
+				'shipment_id' => $response['shipment_id'],
+				'platform'    => $winner->platform,
+				'courier'     => $winner->courier,
+				'awb'         => $awb_response['awb_code'] ?? '',
+				'label_url'   => $label_res['label_url'] ?? '',
+				'cost'        => $vendor_share
+			] );
 
-			// Store return shipping cost in order meta for Dokan Statement (50% share)
-			$total_cost = isset( $winner->base ) ? $winner->base : 0;
-			$vendor_share = $total_cost / 2;
-			update_post_meta( $order_id, '_zh_return_shipping_cost', $vendor_share );
-			update_post_meta( $order_id, '_zh_return_shipping_date', current_time( 'mysql' ) );
-			error_log( "ZSS: Stored return shipping cost ₹{$vendor_share} (50%% of ₹{$total_cost}) in order meta for Order #{$order_id}" );
+			error_log( "ZSS: Stored return shipping data (Share: ₹{$vendor_share} in Vault for Order #{$order_id}" );
 
 			// Track Event: In Transit
 			\Zerohold\Shipping\Core\DokanShipmentSync::add_return_update( 

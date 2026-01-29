@@ -233,13 +233,15 @@ class VendorShippingOrchestrator {
 
 	private function handleBigShipExtras( $order_id, $shipment_id, $platform, $awb_res, $label_res ) {
 		if ( $platform === 'bigship' ) {
-			update_post_meta( $order_id, '_zh_shipment_platform', 'bigship' );
-			update_post_meta( $order_id, '_zh_system_order_id', $shipment_id );
-			if ( ! empty( $awb_res['awb_code'] ) ) update_post_meta( $order_id, '_zh_awb', $awb_res['awb_code'] );
-			if ( ! empty( $awb_res['lr_number'] ) ) update_post_meta( $order_id, '_zh_bigship_lr_number', $awb_res['lr_number'] );
-			if ( ! empty( $awb_res['courier_name'] ) ) update_post_meta( $order_id, '_zh_courier', $awb_res['courier_name'] );
-			if ( ! empty( $awb_res['courier_id'] ) ) update_post_meta( $order_id, '_zh_courier_id', $awb_res['courier_id'] );
-			if ( ! empty( $label_res['label_url'] ) ) update_post_meta( $order_id, '_zh_label_pdf_url', $label_res['label_url'] );
+			OrderStateManager::record_shipment_data( $order_id, [
+				'platform'   => 'bigship',
+				'system_id'  => $shipment_id,
+				'awb'        => $awb_res['awb_code'] ?? '',
+				'lr_number'  => $awb_res['lr_number'] ?? '',
+				'courier'    => $awb_res['courier_name'] ?? '',
+				'courier_id' => $awb_res['courier_id'] ?? '',
+				'label_url'  => $label_res['label_url'] ?? '',
+			] );
 		}
 	}
 

@@ -162,8 +162,8 @@ class VendorActions {
 
 		$order_id = intval( $_POST['order_id'] );
 		
-		// Update meta
-		update_post_meta( $order_id, '_zh_return_handover_confirmed', 1 );
+		// Update meta via Vault
+		\Zerohold\Shipping\Core\OrderStateManager::confirm_return_handover( $order_id );
 
 		// Track Event
 		\Zerohold\Shipping\Core\DokanShipmentSync::add_return_update( 

@@ -41,13 +41,74 @@ class OrderStateManager {
 	const META_REJECTION_TOTAL      = '_zh_rejection_total';
 	const META_REJECTION_DATE       = '_zh_rejection_date';
 
-	// 4. SHIPPING STATE KEYS
+	// 4. SHIPPING STATE KEYS (Standardized)
 	const META_PLATFORM             = '_zh_shipping_platform';
-	const META_AWB                  = '_zh_shiprocket_awb';
-	const META_LABEL_URL            = '_zh_shiprocket_label_url';
-	const META_LABEL_STATUS         = '_zh_shiprocket_label_status';
-	const META_PICKUP_STATUS        = '_zh_shiprocket_pickup_status';
-	const META_SHIPMENT_ID          = '_zh_shiprocket_shipment_id';
+	const META_AWB                  = '_zh_awb';
+	const META_SYSTEM_ORDER_ID      = '_zh_system_order_id';
+	const META_COURIER              = '_zh_courier';
+	const META_COURIER_ID           = '_zh_courier_id';
+	const META_LABEL_URL            = '_zh_label_pdf_url';
+	const META_LR_NUMBER            = '_zh_bigship_lr_number';
+	const META_PICKUP_STATUS        = '_zh_shiprocket_pickup_status'; // Legacy name but kept for stability
+	
+	// Legacy Aliases (pointing to Standardized keys)
+	const LEGACY_SHIPROCKET_AWB       = '_zh_shiprocket_awb';
+	const LEGACY_SHIPROCKET_LABEL_URL = '_zh_shiprocket_label_url';
+
+	// 5. RETURN SHIPPING KEYS
+	const META_RETURN_SHIPMENT_ID    = '_zh_return_shipment_id';
+	const META_RETURN_PLATFORM       = '_zh_return_platform';
+	const META_RETURN_COURIER        = '_zh_return_courier';
+	const META_RETURN_AWB            = '_zh_return_awb';
+	const META_RETURN_LABEL_URL      = '_zh_return_label_url';
+	const META_RETURN_COST           = '_zh_return_shipping_cost';
+	const META_RETURN_DATE           = '_zh_return_shipping_date';
+	const META_RETURN_HANDOVER       = '_zh_return_handover_confirmed';
+	const META_BIGSHIP_SYSTEM_ID     = '_zh_bigship_system_order_id';
+
+	/**
+	 * Mark Return Handover as Confirmed (Hardened)
+	 */
+	public static function confirm_return_handover( $order_id ) {
+		update_post_meta( $order_id, self::META_RETURN_HANDOVER, 1 );
+	}
+
+	/**
+	 * Store BigShip System ID (Platform Internal)
+	 */
+	public static function record_bigship_id( $order_id, $system_id ) {
+		update_post_meta( $order_id, self::META_BIGSHIP_SYSTEM_ID, $system_id );
+	}
+
+	/**
+	 * Record Outbound Shipment Data (Hardened)
+	 */
+	public static function record_shipment_data( $order_id, $data ) {
+		if ( ! empty( $data['platform'] ) )    update_post_meta( $order_id, self::META_PLATFORM, $data['platform'] );
+		if ( ! empty( $data['system_id'] ) )   update_post_meta( $order_id, self::META_SYSTEM_ORDER_ID, $data['system_id'] );
+		if ( ! empty( $data['awb'] ) )         update_post_meta( $order_id, self::META_AWB, $data['awb'] );
+		if ( ! empty( $data['courier'] ) )     update_post_meta( $order_id, self::META_COURIER, $data['courier'] );
+		if ( ! empty( $data['courier_id'] ) )  update_post_meta( $order_id, self::META_COURIER_ID, $data['courier_id'] );
+		if ( ! empty( $data['label_url'] ) )   update_post_meta( $order_id, self::META_LABEL_URL, $data['label_url'] );
+		if ( ! empty( $data['lr_number'] ) )   update_post_meta( $order_id, self::META_LR_NUMBER, $data['lr_number'] );
+		
+		// Compatibility for legacy keys
+		if ( ! empty( $data['awb'] ) )         update_post_meta( $order_id, self::LEGACY_SHIPROCKET_AWB, $data['awb'] );
+		if ( ! empty( $data['label_url'] ) )   update_post_meta( $order_id, self::LEGACY_SHIPROCKET_LABEL_URL, $data['label_url'] );
+	}
+
+	/**
+	 * Record Return Shipment Data (Hardened)
+	 */
+	public static function record_return_data( $order_id, $data ) {
+		if ( ! empty( $data['shipment_id'] ) ) update_post_meta( $order_id, self::META_RETURN_SHIPMENT_ID, $data['shipment_id'] );
+		if ( ! empty( $data['platform'] ) )    update_post_meta( $order_id, self::META_RETURN_PLATFORM, $data['platform'] );
+		if ( ! empty( $data['courier'] ) )     update_post_meta( $order_id, self::META_RETURN_COURIER, $data['courier'] );
+		if ( ! empty( $data['awb'] ) )         update_post_meta( $order_id, self::META_RETURN_AWB, $data['awb'] );
+		if ( ! empty( $data['label_url'] ) )   update_post_meta( $order_id, self::META_RETURN_LABEL_URL, $data['label_url'] );
+		if ( ! empty( $data['cost'] ) )        update_post_meta( $order_id, self::META_RETURN_COST, $data['cost'] );
+		if ( ! empty( $data['cost'] ) )        update_post_meta( $order_id, self::META_RETURN_DATE, current_time('mysql') );
+	}
 
 	/**
 	 * Get Visibility State
