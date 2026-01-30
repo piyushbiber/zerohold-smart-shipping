@@ -226,6 +226,15 @@ class VendorShippingOrchestrator {
 			$vendor_share_final = \Zerohold\Shipping\Core\PriceEngine::calculate_share_and_cap( $total_cost, 'vendor', $vendor_id );
 			
 			update_post_meta( $order_id, '_zh_shipping_cost', $vendor_share_final );
+
+			// Store Additional Meta for Scenario D Cancellation Penalty
+			update_post_meta( $order_id, '_zh_base_shipping_cost', $total_cost );
+			
+			// Calculate and store the Retailer Cap specifically
+			$retailer_price = \Zerohold\Shipping\Core\PriceEngine::calculate_share_and_cap( $total_cost, 'retailer' );
+			$retailer_share = $total_cost * ( (float) get_option( "zh_retailer_shipping_share_percentage", 50 ) / 100 );
+			$retailer_cap   = max( 0, $retailer_price - $retailer_share );
+			update_post_meta( $order_id, '_zh_retailer_cap_amount', $retailer_cap );
 			
 			// Note: Wallet deduction is handled by DokanStatementIntegration reading _zh_shipping_cost
 		}

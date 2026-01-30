@@ -63,6 +63,10 @@ class BuyerCancellationManager {
 						msg = '<?php _e("Your order is already packed and a shipping label has been generated. If you cancel now, shipping charges will NOT be refunded. Do you still want to proceed?", "zerohold-shipping"); ?>';
 					}
 
+					if (stage === 'transit') {
+						msg = '<?php _e("Your parcel is already in transit. Cancellation now will incur a full shipping penalty (Base Price + Profit Cap). Do you still want to proceed?", "zerohold-shipping"); ?>';
+					}
+
 					if (!confirm(msg)) {
 						e.preventDefault();
 					}
@@ -95,13 +99,16 @@ class BuyerCancellationManager {
 		$stage = 'none';
 
 		if ( $label_status == 1 ) {
-			// Stage 2: Label exists (Partial Refund)
-			$stage = 'post-label';
+			// Check for transit (Lightweight Check for UI)
+			$is_shipped = get_post_meta( $order_id, '_zh_shiprocket_pickup_status', true ) == 1 || get_post_meta( $order_id, '_zh_bigship_pickup_status', true ) == 1;
+			
+			if ( $is_shipped ) {
+				$stage = 'transit';
+			} else {
+				$stage = 'post-label';
+			}
 		} else {
 			// Stage 1: No Label yet (Full Refund)
-			// This covers: 
-			// 1. Cool-off window (invisible)
-			// 2. The Gap (visible but no label yet)
 			$stage = 'cool-off'; 
 		}
 
@@ -155,14 +162,17 @@ class BuyerCancellationManager {
 
 		$stage = 'none';
 		if ( $label_status == 1 ) {
-			$stage = 'post-label';
+			// REAL-TIME TRANSIT CHECK (API Based)
+			if ( $this->is_order_in_transit_realtime( $order_id ) ) {
+				$stage = 'transit';
+			} else {
+				$stage = 'post-label';
+			}
 		} else {
 			// No label exists - check if order is currently visible to vendor
 			if ( $is_visible === 'yes' ) {
-				// Cool-off ended, order is visible - treat as post-cooloff for visibility purposes
 				$stage = 'post-cooloff-no-label';
 			} else {
-				// Still in cool-off window (hidden from vendor)
 				$stage = 'cool-off';
 			}
 		}
@@ -185,8 +195,8 @@ class BuyerCancellationManager {
 			// Keep order visible to vendor so they see the cancellation
 			update_post_meta( $order_id, '_zh_vendor_visible', 'yes' );
 			update_post_meta( $order_id, '_zh_buyer_cancelled_post_cooloff', 'yes' );
-		} else {
-			// Stage: post-label
+		} elseif ( $stage === 'post-label' ) {
+			// Stage: post-label (Packed but NOT in transit)
 			// Get actual shipping amount paid by buyer (not vendor cost)
 			$shipping_total = (float) $order->get_shipping_total();
 			$refund_amount  = $order_total - $shipping_total;
@@ -197,7 +207,30 @@ class BuyerCancellationManager {
 			update_post_meta( $order_id, '_zh_buyer_cancelled_post_label', 'yes' );
 			
 			// REFUND VENDOR SHIPPING COST
-			// Since label was generated, vendor paid shipping. Now order is cancelled, refund that cost back to vendor.
+			$this->refund_vendor_shipping_cost( $order_id );
+		} else {
+			// Stage: transit (Scenario D)
+			// Penalty = Base Freight + Retailer Cap
+			$base_freight = (float) get_post_meta( $order_id, '_zh_base_shipping_cost', true );
+			$retailer_cap = (float) get_post_meta( $order_id, '_zh_retailer_cap_amount', true );
+			
+			// If meta is missing (old order), fallback to buyer's shipping total
+			if ( $base_freight <= 0 ) {
+				$base_freight = (float) $order->get_shipping_total();
+			}
+
+			$total_penalty = $base_freight + $retailer_cap;
+			$refund_amount  = max( 0, $order_total - $total_penalty );
+			$note = sprintf( 
+				__( 'Buyer cancelled order DURING TRANSIT. Penalty Applied: ₹%s (Base ₹%s + Cap ₹%s).', 'zerohold-shipping' ), 
+				$total_penalty, $base_freight, $retailer_cap 
+			);
+			
+			update_post_meta( $order_id, '_zh_vendor_visible', 'yes' );
+			update_post_meta( $order_id, '_zh_buyer_cancelled_transit', 'yes' );
+			update_post_meta( $order_id, '_zh_transit_penalty_amount', $total_penalty );
+
+			// VENDOR REFUND: Still refund vendor their share, as they have no fault.
 			$this->refund_vendor_shipping_cost( $order_id );
 		}
 
@@ -350,5 +383,41 @@ class BuyerCancellationManager {
 		}
 
 		error_log( "ZSS: Scheduled ₹{$shipping_cost} shipping refund for vendor #{$vendor_id} for order #{$order_id}" );
+	}
+
+	/**
+	 * Real-time check if an order is in transit based on API scan histories.
+	 * 
+	 * @param int $order_id
+	 * @return bool
+	 */
+	private function is_order_in_transit_realtime( $order_id ) {
+		$platform    = get_post_meta( $order_id, '_zh_shipping_platform', true );
+		$awb         = get_post_meta( $order_id, '_zh_shiprocket_awb', true ) ?: get_post_meta( $order_id, '_zh_awb', true );
+		$lrn         = get_post_meta( $order_id, '_zh_bigship_lr_number', true );
+		$tracking_id = ( $platform === 'bigship' && ! empty( $lrn ) ) ? $lrn : $awb;
+		$type        = ( $platform === 'bigship' && ! empty( $lrn ) ) ? 'lrn' : 'awb';
+
+		if ( ! $tracking_id ) return false;
+
+		// Get Adapter
+		$adapter = null;
+		if ( $platform === 'shiprocket' ) {
+			$adapter = new \Zerohold\Shipping\Platforms\ShiprocketAdapter();
+		} elseif ( $platform === 'bigship' ) {
+			$adapter = new \Zerohold\Shipping\Platforms\BigShipAdapter();
+		}
+
+		if ( ! $adapter ) return false;
+
+		// Fetch Real-time Tracking
+		$tracking = ( $platform === 'bigship' ) ? $adapter->track( $tracking_id, $type ) : $adapter->track( $tracking_id );
+
+		// logic: If scan_histories has ANY entries, it means it's with the courier
+		if ( ! empty( $tracking['data']['scan_histories'] ) ) {
+			return true;
+		}
+
+		return false;
 	}
 }
