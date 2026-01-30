@@ -213,6 +213,9 @@ class ShippingShareSettings {
 					</table>
 				</div>
 
+				<!-- ========================================================
+				     RETAILER SECTION
+				     ======================================================== -->
 				<div class="zh-settings-section" style="background: #fff; padding: 20px; border: 1px solid #ccd0d4; margin-bottom: 30px; border-radius: 4px;">
 					<h2 class="title" style="margin-top:0; color: #2271b1; border-bottom: 2px solid #2271b1; padding-bottom: 10px;">
 						<span class="dashicons dashicons-businessman" style="vertical-align: middle;"></span> <?php _e( 'Retailer Configuration (Buyer)', 'zerohold-shipping' ); ?>

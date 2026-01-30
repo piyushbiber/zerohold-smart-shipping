@@ -62,23 +62,23 @@ class DokanEarningsFix {
 	 * This prevents shipping charges from leaking into vendor earnings after rejection/refund.
 	 */
 	private function process_earnings_logic( $earning, $order ) {
-		if ( $this->is_zss_order( $order ) ) {
-			// 1. If rejected/refunded/cancelled, earning MUST be 0
-			$status = $order->get_status();
-			if ( in_array( $status, [ 'refunded', 'cancelled', 'failed', 'rejected' ] ) ) {
-				return 0;
+		// Identify ZSS Orders
+		$is_zss = false;
+		foreach ( $order->get_shipping_methods() as $method ) {
+			if ( strpos( $method->get_method_id(), 'zerohold_shipping' ) !== false ) {
+				$is_zss = true;
+				break;
 			}
+		}
 
-			// 2. Otherwise, ensure it never exceeds (Total - Shipping)
+		if ( $is_zss ) {
 			$total    = (float) $order->get_total();
 			$shipping = (float) $order->get_shipping_total();
-			$actual_item_total = $total - $shipping;
-
-			if ( $earning > $actual_item_total + 0.01 ) {
-				return $actual_item_total;
-			}
-
-			return max( 0, $earning );
+			
+			// For ZeroHold orders, the vendor ALWAYS receives only the item subtotal (minus commission if any).
+			// Since ZeroHold shipping belongs to Admin, we must ensure it's never included in vendor's 'Earning' column.
+			// Even if Dokan's internal calculation defaults to the full total (e.g., during rejection).
+			return $total - $shipping;
 		}
 
 		return $earning;
@@ -123,7 +123,16 @@ class DokanEarningsFix {
 			return $formatted_total;
 		}
 
-		if ( ! $this->is_zss_order( $order ) ) {
+		// Check if order uses ZSS shipping
+		$is_zss = false;
+		foreach ( $order->get_shipping_methods() as $method ) {
+			if ( strpos( $method->get_method_id(), 'zerohold_shipping' ) !== false ) {
+				$is_zss = true;
+				break;
+			}
+		}
+
+		if ( ! $is_zss ) {
 			return $formatted_total;
 		}
 
@@ -134,38 +143,6 @@ class DokanEarningsFix {
 
 		// Return formatted price
 		return wc_price( $new_total, [ 'currency' => $order->get_currency() ] );
-	}
-
-	private function is_zss_order( $order ) {
-		if ( ! $order ) return false;
-
-		// 1. Check Metadata
-		if ( $order->get_meta( '_dokan_shipping_fee_recipient' ) === 'admin' ) return true;
-		if ( $order->get_meta( '_is_zss_shipping' ) === 'yes' ) return true;
-
-		// 2. Check Shipping Methods
-		foreach ( $order->get_shipping_methods() as $method ) {
-			if ( strpos( $method->get_method_id(), 'zerohold_shipping' ) !== false || strpos( $method->get_method_id(), 'zerohold_buyer_shipping' ) !== false ) {
-				return true;
-			}
-		}
-
-		// 3. Check Parent (For Sub-orders)
-		$parent_id = $order->get_parent_id();
-		if ( $parent_id ) {
-			$parent = wc_get_order( $parent_id );
-			if ( $parent ) {
-				if ( $parent->get_meta( '_dokan_shipping_fee_recipient' ) === 'admin' ) return true;
-				if ( $parent->get_meta( '_is_zss_shipping' ) === 'yes' ) return true;
-				foreach ( $parent->get_shipping_methods() as $method ) {
-					if ( strpos( $method->get_method_id(), 'zerohold_shipping' ) !== false || strpos( $method->get_method_id(), 'zerohold_buyer_shipping' ) !== false ) {
-						return true;
-					}
-				}
-			}
-		}
-
-		return false;
 	}
 
 	/**
@@ -227,19 +204,22 @@ class DokanEarningsFix {
 	 * Hooked to: dokan_order_net_amount
 	 */
 	public function filter_net_amount( $net_amount, $order ) {
-		if ( ! $order instanceof \WC_Order ) {
+		if ( ! $order instanceof WC_Order ) {
 			$order = wc_get_order( $order );
 		}
 		if ( ! $order ) {
 			return $net_amount;
 		}
 
-		if ( $this->is_zss_order( $order ) ) {
-			// If rejected/refunded, net amount MUST be 0
-			if ( in_array( $order->get_status(), [ 'refunded', 'cancelled', 'failed', 'rejected' ] ) ) {
-				return 0;
+		$is_zss = false;
+		foreach ( $order->get_shipping_methods() as $method ) {
+			if ( strpos( $method->get_method_id(), 'zerohold_shipping' ) !== false ) {
+				$is_zss = true;
+				break;
 			}
+		}
 
+		if ( $is_zss ) {
 			$total    = (float) $order->get_total();
 			$shipping = (float) $order->get_shipping_total();
 			
