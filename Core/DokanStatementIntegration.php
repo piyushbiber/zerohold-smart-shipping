@@ -108,24 +108,43 @@ class DokanStatementIntegration {
 				$penalty_date = $penalty->penalty_date;
 				$order_amount = $total_deduction - $penalty_amount; // The 100% amount
 
-				// ROW A: Order Reversal (-100%)
-				$penalty_entries[] = [
-					'id'           => 'ZH-REV-' . $order_id,
-					'vendor_id'    => $vendor_id,
-					'trn_id'       => $order_id,
-					'trn_type'     => 'zh_rejection_reversal',
-					'perticulars'  => sprintf( __( 'Order #%d Reversal (Refunded to customer)', 'zerohold-shipping' ), $order_id ),
-					'debit'        => 0,
-					'credit'       => $order_amount,
-					'status'       => 'approved',
-					'trn_date'     => $penalty_date,
-					'balance_date' => $penalty_date,
-					'balance'      => 0,
-					'trn_title'    => __( 'Order Reversal', 'zerohold-shipping' ),
-					'url'          => $this->get_order_url( $order_id ),
-				];
+				// STEP 3.1: CONDENSATION GUARD
+				// If we find matching Dokan order entries in the current list, we hide them AND skip the reversal.
+				// This keeps the statement clean (only showing the penalty) without breaking balance.
+				$dokan_order_keys = [];
+				foreach ( $filtered_entries as $key => $dokan_entry ) {
+					if ( $dokan_entry['trn_type'] === 'dokan_orders' && (int) $dokan_entry['trn_id'] === $order_id ) {
+						$dokan_order_keys[] = $key;
+					}
+				}
 
-				// ROW B: Rejection Penalty (-25%)
+				if ( ! empty( $dokan_order_keys ) ) {
+					// Match found: Hide Dokan entry(s) and skip ZSS Reversal
+					foreach ( $dokan_order_keys as $key ) {
+						unset( $filtered_entries[ $key ] );
+					}
+					error_log( "ZSS: Condensed rejection statement for Order #{$order_id}. Suppressed redundant Order/Reversal rows." );
+				} else {
+					// No match found: Order was likely in a previous period.
+					// We MUST keep the reversal to maintain ledger accuracy.
+					$penalty_entries[] = [
+						'id'           => 'ZH-REV-' . $order_id,
+						'vendor_id'    => $vendor_id,
+						'trn_id'       => $order_id,
+						'trn_type'     => 'zh_rejection_reversal',
+						'perticulars'  => sprintf( __( 'Order #%d Reversal (Refunded to customer)', 'zerohold-shipping' ), $order_id ),
+						'debit'        => 0,
+						'credit'       => $order_amount,
+						'status'       => 'approved',
+						'trn_date'     => $penalty_date,
+						'balance_date' => $penalty_date,
+						'balance'      => 0,
+						'trn_title'    => __( 'Order Reversal', 'zerohold-shipping' ),
+						'url'          => $this->get_order_url( $order_id ),
+					];
+				}
+
+				// Row: Rejection Penalty (Always show this)
 				$penalty_entries[] = [
 					'id'           => 'ZH-FEE-' . $order_id,
 					'vendor_id'    => $vendor_id,
@@ -142,7 +161,7 @@ class DokanStatementIntegration {
 					'url'          => $this->get_order_url( $order_id ),
 				];
 				
-				error_log( "ZSS: Injected split rejection entries for Order #{$order_id} (Rev: ₹{$order_amount}, Fee: ₹{$penalty_amount})" );
+				error_log( "ZSS: Injected rejection penalty for Order #{$order_id} (Fee: ₹{$penalty_amount})" );
 			}
 		}
 
