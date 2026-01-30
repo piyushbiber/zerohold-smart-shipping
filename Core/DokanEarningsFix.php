@@ -18,11 +18,9 @@ class DokanEarningsFix {
 		add_filter( 'dokan_shipping_fee_recipient', [ $this, 'route_shipping_to_admin' ], 20, 2 );
 		add_filter( 'woocommerce_get_formatted_order_total', [ $this, 'filter_vendor_order_total' ], 20, 4 );
 		
-		// 🛡️ PRIMARY: Intercept earnings pulled from DB table (Dokan often bypasses other filters if this exists)
-		add_filter( 'dokan_get_earning_from_order_table', [ $this, 'filter_vendor_earnings_raw' ], 20, 4 );
-		
-		// 🛡️ SECONDARY: Intercept calculation flow
-		add_filter( 'dokan_get_earning_by_order', [ $this, 'filter_vendor_earnings_object' ], 20, 3 );
+		// 🛡️ PRIMARY: Intercept earnings with ULTRA-HIGH priority to override Dokan Pro calculations
+		add_filter( 'dokan_get_earning_from_order_table', [ $this, 'filter_vendor_earnings_raw' ], 999, 4 );
+		add_filter( 'dokan_get_earning_by_order', [ $this, 'filter_vendor_earnings_object' ], 999, 3 );
 	}
 
 	/**
@@ -45,7 +43,7 @@ class DokanEarningsFix {
 	 * Object filter: Intercepts earnings during calculation flow.
 	 */
 	public function filter_vendor_earnings_object( $earning, $order, $context ) {
-		if ( $context !== 'seller' ) {
+		if ( $context !== 'seller' || ! $order ) {
 			return $earning;
 		}
 
@@ -53,15 +51,11 @@ class DokanEarningsFix {
 	}
 
 	/**
-	 * Core Logic: Ensures shipping exclusion and zero earnings for cancellations.
+	 * Core Logic: Forces earning to be (Total - Shipping) for ZSS orders.
+	 * This ensures consistency even if the order is rejected/refunded.
 	 */
 	private function process_earnings_logic( $earning, $order ) {
-		// 1. If order is cancelled or refunded, earning MUST be 0
-		if ( in_array( $order->get_status(), [ 'cancelled', 'refunded' ], true ) ) {
-			return 0;
-		}
-
-		// 2. Otherwise, ensure ZSS shipping is excluded
+		// Identify ZSS Orders
 		$is_zss = false;
 		foreach ( $order->get_shipping_methods() as $method ) {
 			if ( strpos( $method->get_method_id(), 'zerohold_shipping' ) !== false ) {
@@ -74,11 +68,9 @@ class DokanEarningsFix {
 			$total    = (float) $order->get_total();
 			$shipping = (float) $order->get_shipping_total();
 			
-			// If current earning is higher than (total - shipping), it definitely includes shipping.
-			// We cap it to (total - shipping).
-			if ( (float)$earning > ( $total - $shipping ) ) {
-				return max( 0, $total - $shipping );
-			}
+			// The "Actual Price" we want to show is always Total minus Shipping.
+			// We force this value to prevent Dokan from defaulting to the full total upon rejection.
+			return max( 0, $total - $shipping );
 		}
 
 		return $earning;
