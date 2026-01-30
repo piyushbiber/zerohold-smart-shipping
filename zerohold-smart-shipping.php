@@ -138,7 +138,8 @@ class ZeroHoldSmartShipping {
 	 * Register the shipping method class.
 	 */
 	public function register_shipping_method( $methods ) {
-		$methods['zerohold_shipping'] = \Zerohold\Shipping\Frontend\ZSS_Shipping_Method::class;
+		// Buyer Quoter is parked here - Migrating to 'ZeroHold Buyer Shipping' plugin
+		// $methods['zerohold_shipping'] = \Zerohold\Shipping\Frontend\ZSS_Shipping_Method::class;
 		return $methods;
 	}
 
@@ -146,9 +147,12 @@ class ZeroHoldSmartShipping {
 	 * Initialize the shipping method class.
 	 */
 	public function init_shipping_method() {
+		// Parked for separate plugin
+		/*
 		if ( class_exists( 'WC_Shipping_Method' ) ) {
 			require_once __DIR__ . '/Frontend/ZSS_Shipping_Method.php';
 		}
+		*/
 	}
 
 	/**
