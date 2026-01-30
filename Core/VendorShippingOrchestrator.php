@@ -48,6 +48,15 @@ class VendorShippingOrchestrator {
 			return [ 'success' => false, 'message' => 'Order is in cool-off period.' ];
 		}
 
+		// 🛡️ RACE CONDITION GUARD: Fresh check of order status
+		$invalid_statuses = [ 'cancelled', 'refunded', 'failed', 'rejected' ];
+		if ( in_array( $order->get_status(), $invalid_statuses ) ) {
+			return [ 
+				'success' => false, 
+				'message' => 'Shipping failed: Order is already ' . $order->get_status() . ' by buyer.' 
+			];
+		}
+
 		// Duplicate Guard
 		$label_status = get_post_meta( $order_id, '_zh_shiprocket_label_status', true );
 		if ( $label_status == 1 && $context === 'booking' ) {
