@@ -153,6 +153,10 @@ class ZSS_Shipping_Method extends \WC_Shipping_Method {
 				'label'   => $this->title, 
 				'cost'    => $final_cost,
 				'package' => $package,
+				'meta_data' => array(
+					'is_zss' => 'yes',
+					'platform' => $best_rate->platform
+				)
 			);
 
 			$this->add_rate( $rate );

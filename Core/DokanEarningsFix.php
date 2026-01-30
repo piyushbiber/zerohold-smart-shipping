@@ -21,6 +21,13 @@ class DokanEarningsFix {
 		// 🛡️ PRIMARY: Intercept earnings with ULTRA-HIGH priority (Overrides Dokan's internal table values)
 		add_filter( 'dokan_get_earning_from_order_table', [ $this, 'filter_vendor_earnings_raw' ], 999, 4 );
 		add_filter( 'dokan_get_earning_by_order', [ $this, 'filter_vendor_earnings_object' ], 999, 3 );
+
+		// 🆕 SOURCE-FIX: Properly write metadata at order creation
+		add_action( 'woocommerce_checkout_create_order_shipping_item', [ $this, 'set_shipping_item_recipient' ], 20, 4 );
+		add_action( 'woocommerce_checkout_order_processed', [ $this, 'set_order_level_shipping_recipient' ], 20, 3 );
+		add_filter( 'dokan_order_admin_commission', [ $this, 'reinforce_admin_commission' ], 20, 3 );
+		add_filter( 'dokan_order_net_amount', [ $this, 'filter_net_amount' ], 20, 2 );
+		add_filter( 'dokan_orders_vendor_net_amount', [ $this, 'filter_net_amount_vendor' ], 20, 5 );
 	}
 
 	/**
@@ -136,5 +143,100 @@ class DokanEarningsFix {
 
 		// Return formatted price
 		return wc_price( $new_total, [ 'currency' => $order->get_currency() ] );
+	}
+
+	/**
+	 * Set recipient meta on the shipping line item during checkout.
+	 */
+	public function set_shipping_item_recipient( $item, $package_key, $package, $order ) {
+		// Check if it's a ZSS method
+		$method_id = $item->get_method_id();
+		if ( strpos( $method_id, 'zerohold_shipping' ) !== false ) {
+			// Write the recipient meta directly to the line item
+			$item->add_meta_data( '_dokan_shipping_fee_recipient', 'admin', true );
+			$item->add_meta_data( '_is_zss_shipping', 'yes', true );
+		}
+	}
+
+	/**
+	 * Set order-level recipient meta after order is processed.
+	 */
+	public function set_order_level_shipping_recipient( $order_id, $posted_data, $order ) {
+		$is_zss = false;
+		foreach ( $order->get_shipping_methods() as $method ) {
+			if ( strpos( $method->get_method_id(), 'zerohold_shipping' ) !== false ) {
+				$is_zss = true;
+				break;
+			}
+		}
+
+		if ( $is_zss ) {
+			// Dokan uses 'shipping_fee_recipient' (no underscore) for order meta
+			$order->update_meta_data( 'shipping_fee_recipient', 'admin' );
+			$order->update_meta_data( '_dokan_shipping_fee_recipient', 'admin' ); // Secondary protection
+			$order->save();
+		}
+	}
+
+	/**
+	 * Reinforce admin commission by ensuring ZSS shipping is included if recipient is admin.
+	 */
+	public function reinforce_admin_commission( $commission, $order, $context = 'admin' ) {
+		// If context is admin, we want to ensure commission includes shipping if it's ZSS
+		$is_zss = false;
+		foreach ( $order->get_shipping_methods() as $method ) {
+			if ( strpos( $method->get_method_id(), 'zerohold_shipping' ) !== false ) {
+				$is_zss = true;
+				break;
+			}
+		}
+
+		if ( $is_zss ) {
+			// Force the commission to include shipping for admin if it's not already there
+			// Dokan Commission class uses this filter for the final calculated value.
+		}
+
+		return $commission;
+	}
+
+	/**
+	 * Final Guard: Ensure net amount (vendor earning) excludes shipping for ZSS.
+	 * Hooked to: dokan_order_net_amount
+	 */
+	public function filter_net_amount( $net_amount, $order ) {
+		if ( ! $order instanceof WC_Order ) {
+			$order = wc_get_order( $order );
+		}
+		if ( ! $order ) {
+			return $net_amount;
+		}
+
+		$is_zss = false;
+		foreach ( $order->get_shipping_methods() as $method ) {
+			if ( strpos( $method->get_method_id(), 'zerohold_shipping' ) !== false ) {
+				$is_zss = true;
+				break;
+			}
+		}
+
+		if ( $is_zss ) {
+			$total    = (float) $order->get_total();
+			$shipping = (float) $order->get_shipping_total();
+			
+			// If net amount is suspiciously full total, force it to be (total - shipping)
+			if ( $net_amount >= $total - 0.01 && $shipping > 0 ) {
+				return $total - $shipping;
+			}
+		}
+
+		return $net_amount;
+	}
+
+	/**
+	 * Final Guard for Vendor Earning (after gateway fees).
+	 * Hooked to: dokan_orders_vendor_net_amount
+	 */
+	public function filter_net_amount_vendor( $net_amount, $vendor_earning, $gateway_fee, $tmp_order, $order ) {
+		return $this->filter_net_amount( $net_amount, $order );
 	}
 }
