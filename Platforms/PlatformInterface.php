@@ -25,4 +25,12 @@ interface PlatformInterface {
 	public function estimateRates( $origin_pincode, $destination_pincodes, $slab );
 	public function getWalletBalance();
 	public function isBalanceError( $response );
+
+	/**
+	 * Cancel a shipment/order on the platform.
+	 * 
+	 * @param int $order_id WooCommerce Order ID
+	 * @return array API Response
+	 */
+	public function cancelOrder( $order_id );
 }

@@ -205,6 +205,9 @@ class BuyerCancellationManager {
 			// Ensure it remains visible to vendor so they see the cancellation
 			update_post_meta( $order_id, '_zh_vendor_visible', 'yes' );
 			update_post_meta( $order_id, '_zh_buyer_cancelled_post_label', 'yes' );
+
+			// 🚀 TRIGGER CARRIER API CANCELLATION (VOID SHIPMENT)
+			$this->trigger_carrier_cancellation( $order_id );
 			
 			// REFUND VENDOR SHIPPING COST
 			$this->refund_vendor_shipping_cost( $order_id );
@@ -419,5 +422,38 @@ class BuyerCancellationManager {
 		}
 
 		return false;
+	}
+
+	/**
+	 * Trigger real-time cancellation on the shipping platform.
+	 * 
+	 * @param int $order_id
+	 */
+	private function trigger_carrier_cancellation( $order_id ) {
+		$platform = get_post_meta( $order_id, '_zh_shipping_platform', true );
+		if ( ! $platform ) return;
+
+		$adapter = null;
+		if ( $platform === 'shiprocket' ) {
+			$adapter = new \Zerohold\Shipping\Platforms\ShiprocketAdapter();
+		} elseif ( $platform === 'bigship' ) {
+			$adapter = new \Zerohold\Shipping\Platforms\BigShipAdapter();
+		}
+
+		if ( $adapter ) {
+			$result = $adapter->cancelOrder( $order_id );
+			
+			if ( is_wp_error( $result ) ) {
+				error_log( "ZSS ERROR: Carrier Cancellation Failed for Order #{$order_id}: " . $result->get_error_message() );
+			} else {
+				$msg = $result['message'] ?? ( isset($result['success']) && $result['success'] ? 'Success' : 'API Error' );
+				error_log( "ZSS LOG: Carrier Cancellation Signal Sent for Order #{$order_id} - Platform: {$platform}, Response: {$msg}" );
+				
+				$order = wc_get_order( $order_id );
+				if ( $order ) {
+					$order->add_order_note( sprintf( __( 'Carrier Cancellation Signal sent to %s. Response: %s', 'zerohold-shipping' ), ucfirst($platform), $msg ) );
+				}
+			}
+		}
 	}
 }

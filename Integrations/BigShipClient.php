@@ -156,4 +156,35 @@ class BigShipClient {
 		$body = wp_remote_retrieve_body( $response );
 		return json_decode( $body, true );
 	}
+	/**
+	 * PUT Request
+	 * @param string $endpoint API endpoint
+	 * @param array $data PUT body data (will be JSON encoded)
+	 */
+	public function put( $endpoint, $data = [] ) {
+		$token = $this->get_token();
+
+		if ( is_wp_error( $token ) ) {
+			return $token;
+		}
+
+		$url = $this->base_url . $endpoint;
+
+		$response = wp_remote_request( $url, [
+			'method'  => 'PUT',
+			'headers' => [
+				'Content-Type'  => 'application/json',
+				'Authorization' => 'Bearer ' . $token,
+			],
+			'body'    => wp_json_encode( $data ),
+			'timeout' => 30,
+		] );
+
+		if ( is_wp_error( $response ) ) {
+			return $response;
+		}
+
+		$body = wp_remote_retrieve_body( $response );
+		return json_decode( $body, true );
+	}
 }

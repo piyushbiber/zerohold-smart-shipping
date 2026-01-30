@@ -22,6 +22,7 @@ class BigShipAdapter implements PlatformInterface {
 	const ENDPOINT_WAREHOUSE_ADD  = 'warehouse/add';
 	const ENDPOINT_WAREHOUSE_LIST = 'warehouse/get/list';
 	const ENDPOINT_WAREHOUSE_EDIT = 'warehouse/edit';
+	const ENDPOINT_ORDER_CANCEL    = 'order/cancel';
 
 	public function __construct() {
 		$this->client = new BigShipClient();
@@ -651,5 +652,17 @@ class BigShipAdapter implements PlatformInterface {
 		}
 
 		return ( stripos( $msg, 'balance' ) !== false || stripos( $msg, 'insufficient' ) !== false || stripos( $msg, 'credit' ) !== false );
+	}
+
+	public function cancelOrder( $order_id ) {
+		$awb = get_post_meta( $order_id, '_zh_awb', true ) ?: get_post_meta( $order_id, '_zh_shiprocket_awb', true );
+		if ( ! $awb ) {
+			return [ 'error' => 'No AWB found for cancellation.' ];
+		}
+
+		// BigShip expects an array of strings
+		$payload = [ (string) $awb ];
+
+		return $this->client->put( self::ENDPOINT_ORDER_CANCEL, $payload );
 	}
 }

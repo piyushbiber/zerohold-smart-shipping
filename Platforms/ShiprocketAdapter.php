@@ -20,6 +20,7 @@ class ShiprocketAdapter implements PlatformInterface {
 	const ENDPOINT_TRACK_AWB        = 'courier/track/awb/';
 	const ENDPOINT_WALLET_BALANCE   = 'account/details/wallet-balance';
 	const ENDPOINT_WAREHOUSE_ADD    = 'settings/company/addpickup';
+	const ENDPOINT_ORDER_CANCEL     = 'orders/cancel/shipment/awbs';
 
 	public function __construct() {
 		$this->client = new \Zerohold\Shipping\Integrations\ShiprocketClient();
@@ -322,5 +323,18 @@ class ShiprocketAdapter implements PlatformInterface {
 		}
 
 		return ( stripos( $msg, 'balance' ) !== false || stripos( $msg, 'insufficient' ) !== false || stripos( $msg, 'wallet' ) !== false );
+	}
+
+	public function cancelOrder( $order_id ) {
+		$awb = get_post_meta( $order_id, '_zh_shiprocket_awb', true );
+		if ( ! $awb ) {
+			return [ 'error' => 'No AWB found for cancellation.' ];
+		}
+
+		$payload = [
+			'awbs' => [ (string) $awb ]
+		];
+
+		return $this->client->post( self::ENDPOINT_ORDER_CANCEL, $payload );
 	}
 }
