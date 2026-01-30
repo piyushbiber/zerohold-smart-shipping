@@ -17,18 +17,45 @@ class DokanEarningsFix {
 	public function __construct() {
 		add_filter( 'dokan_shipping_fee_recipient', [ $this, 'route_shipping_to_admin' ], 20, 2 );
 		add_filter( 'woocommerce_get_formatted_order_total', [ $this, 'filter_vendor_order_total' ], 20, 4 );
-		add_filter( 'dokan_get_earning_by_order', [ $this, 'filter_vendor_earnings' ], 20, 3 );
+		
+		// 🛡️ PRIMARY: Intercept earnings pulled from DB table (Dokan often bypasses other filters if this exists)
+		add_filter( 'dokan_get_earning_from_order_table', [ $this, 'filter_vendor_earnings_raw' ], 20, 4 );
+		
+		// 🛡️ SECONDARY: Intercept calculation flow
+		add_filter( 'dokan_get_earning_by_order', [ $this, 'filter_vendor_earnings_object' ], 20, 3 );
 	}
 
 	/**
-	 * Filter vendor earnings to be 0 for cancelled/refunded orders.
-	 * Also ensures shipping is excluded for other ZSS orders.
+	 * Raw DB filter: Intercepts earnings when pulled from wp_dokan_orders.
 	 */
-	public function filter_vendor_earnings( $earning, $order, $context ) {
+	public function filter_vendor_earnings_raw( $earning, $order_id, $context, $raw ) {
+		if ( $context !== 'seller' || $raw ) {
+			return $earning;
+		}
+
+		$order = wc_get_order( $order_id );
+		if ( ! $order ) {
+			return $earning;
+		}
+
+		return $this->process_earnings_logic( $earning, $order );
+	}
+
+	/**
+	 * Object filter: Intercepts earnings during calculation flow.
+	 */
+	public function filter_vendor_earnings_object( $earning, $order, $context ) {
 		if ( $context !== 'seller' ) {
 			return $earning;
 		}
 
+		return $this->process_earnings_logic( $earning, $order );
+	}
+
+	/**
+	 * Core Logic: Ensures shipping exclusion and zero earnings for cancellations.
+	 */
+	private function process_earnings_logic( $earning, $order ) {
 		// 1. If order is cancelled or refunded, earning MUST be 0
 		if ( in_array( $order->get_status(), [ 'cancelled', 'refunded' ], true ) ) {
 			return 0;
@@ -46,13 +73,11 @@ class DokanEarningsFix {
 		if ( $is_zss ) {
 			$total    = (float) $order->get_total();
 			$shipping = (float) $order->get_shipping_total();
-			// Earning should be total minus shipping (assuming 100% vendor share for remaining)
-			// Note: Dokan might already subtract its commission, so we strictly handle the shipping part.
-			// If Dokan has a commission, it subtracts it from the order total.
-			// Since we route shipping to admin, Dokan technically already excludes it if settings are right,
-			// but this is a fail-safe.
+			
+			// If current earning is higher than (total - shipping), it definitely includes shipping.
+			// We cap it to (total - shipping).
 			if ( (float)$earning > ( $total - $shipping ) ) {
-				return $total - $shipping;
+				return max( 0, $total - $shipping );
 			}
 		}
 
