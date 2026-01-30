@@ -18,7 +18,7 @@ class DokanEarningsFix {
 		add_filter( 'dokan_shipping_fee_recipient', [ $this, 'route_shipping_to_admin' ], 20, 2 );
 		add_filter( 'woocommerce_get_formatted_order_total', [ $this, 'filter_vendor_order_total' ], 20, 4 );
 		
-		// 🛡️ PRIMARY: Intercept earnings with ULTRA-HIGH priority to override Dokan Pro calculations
+		// 🛡️ PRIMARY: Intercept earnings with ULTRA-HIGH priority (Overrides Dokan's internal table values)
 		add_filter( 'dokan_get_earning_from_order_table', [ $this, 'filter_vendor_earnings_raw' ], 999, 4 );
 		add_filter( 'dokan_get_earning_by_order', [ $this, 'filter_vendor_earnings_object' ], 999, 3 );
 	}
@@ -51,8 +51,8 @@ class DokanEarningsFix {
 	}
 
 	/**
-	 * Core Logic: Forces earning to be (Total - Shipping) for ZSS orders.
-	 * This ensures consistency even if the order is rejected/refunded.
+	 * Core Logic: Ensures "Actual Price" (Total - Shipping) is ALWAYS used for ZeroHold orders.
+	 * This prevents shipping charges from leaking into vendor earnings after rejection/refund.
 	 */
 	private function process_earnings_logic( $earning, $order ) {
 		// Identify ZSS Orders
@@ -68,9 +68,10 @@ class DokanEarningsFix {
 			$total    = (float) $order->get_total();
 			$shipping = (float) $order->get_shipping_total();
 			
-			// The "Actual Price" we want to show is always Total minus Shipping.
-			// We force this value to prevent Dokan from defaulting to the full total upon rejection.
-			return max( 0, $total - $shipping );
+			// For ZeroHold orders, the vendor ALWAYS receives only the item subtotal (minus commission if any).
+			// Since ZeroHold shipping belongs to Admin, we must ensure it's never included in vendor's 'Earning' column.
+			// Even if Dokan's internal calculation defaults to the full total (e.g., during rejection).
+			return $total - $shipping;
 		}
 
 		return $earning;
