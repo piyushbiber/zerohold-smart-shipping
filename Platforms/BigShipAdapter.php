@@ -657,12 +657,34 @@ class BigShipAdapter implements PlatformInterface {
 	public function cancelOrder( $order_id ) {
 		$awb = get_post_meta( $order_id, '_zh_awb', true ) ?: get_post_meta( $order_id, '_zh_shiprocket_awb', true );
 		if ( ! $awb ) {
-			return [ 'error' => 'No AWB found for cancellation.' ];
+			return [ 'success' => false, 'message' => 'No AWB found for cancellation.' ];
 		}
 
 		// BigShip expects an array of strings
 		$payload = [ (string) $awb ];
 
-		return $this->client->put( self::ENDPOINT_ORDER_CANCEL, $payload );
+		$response = $this->client->put( self::ENDPOINT_ORDER_CANCEL, $payload );
+
+		// Check internal response data
+		$success = false;
+		$message = $response['message'] ?? 'Cancellation Failed';
+
+		if ( isset( $response['success'] ) && $response['success'] === true && ! empty( $response['data'] ) ) {
+			$cancel_data = reset( $response['data'] ); // Get first item
+			$status_text = $cancel_data['cancel_response'] ?? '';
+			
+			if ( stripos( $status_text, 'Successfully' ) !== false ) {
+				$success = true;
+				$message = 'Successfully Cancelled';
+			} else {
+				$message = $status_text ?: 'Cancellation Request Rejected';
+			}
+		}
+
+		return [
+			'success' => $success,
+			'message' => $message,
+			'data'    => $response
+		];
 	}
 }

@@ -328,13 +328,23 @@ class ShiprocketAdapter implements PlatformInterface {
 	public function cancelOrder( $order_id ) {
 		$awb = get_post_meta( $order_id, '_zh_shiprocket_awb', true );
 		if ( ! $awb ) {
-			return [ 'error' => 'No AWB found for cancellation.' ];
+			return [ 'success' => false, 'message' => 'No AWB found for cancellation.' ];
 		}
 
 		$payload = [
 			'awbs' => [ (string) $awb ]
 		];
 
-		return $this->client->post( self::ENDPOINT_ORDER_CANCEL, $payload );
+		$response = $this->client->post( self::ENDPOINT_ORDER_CANCEL, $payload );
+
+		// Shiprocket returns status_code 200 and a 'status' field in the body
+		$success = isset( $response['status'] ) && $response['status'] == 200;
+		$message = $response['message'] ?? ( $success ? 'Successfully Cancelled' : 'Cancellation Failed' );
+
+		return [
+			'success' => $success,
+			'message' => $message,
+			'data'    => $response
+		];
 	}
 }

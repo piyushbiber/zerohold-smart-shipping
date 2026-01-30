@@ -64,7 +64,9 @@ class BuyerCancellationManager {
 					}
 
 					if (stage === 'transit') {
-						msg = '<?php _e("Your parcel is already in transit. Cancellation now will incur a full shipping penalty (Base Price + Profit Cap). Do you still want to proceed?", "zerohold-shipping"); ?>';
+						alert('<?php _e("Order cannot be cancelled now it\'s in transit.", "zerohold-shipping"); ?>');
+						e.preventDefault();
+						return;
 					}
 
 					if (!confirm(msg)) {
@@ -99,6 +101,7 @@ class BuyerCancellationManager {
 		$stage = 'none';
 
 		if ( $label_status == 1 ) {
+			// Stage 2: Label exists (Partial Refund)
 			// Check for transit (Lightweight Check for UI)
 			$is_shipped = get_post_meta( $order_id, '_zh_shiprocket_pickup_status', true ) == 1 || get_post_meta( $order_id, '_zh_bigship_pickup_status', true ) == 1;
 			
@@ -197,44 +200,33 @@ class BuyerCancellationManager {
 			update_post_meta( $order_id, '_zh_buyer_cancelled_post_cooloff', 'yes' );
 		} elseif ( $stage === 'post-label' ) {
 			// Stage: post-label (Packed but NOT in transit)
+
+			// 🚀 TRIGGER CARRIER API CANCELLATION (VOID SHIPMENT) - FIRST!
+			$carrier_cancelled = $this->trigger_carrier_cancellation( $order_id );
+
+			if ( ! $carrier_cancelled ) {
+				wc_add_notice( __( 'Order cannot be cancelled now it\'s in transit (Carrier rejected cancellation).', 'zerohold-shipping' ), 'error' );
+				wp_safe_redirect( wc_get_account_endpoint_url( 'orders' ) );
+				exit;
+			}
+
 			// Get actual shipping amount paid by buyer (not vendor cost)
 			$shipping_total = (float) $order->get_shipping_total();
 			$refund_amount  = $order_total - $shipping_total;
-			$note = __( 'Buyer cancelled order after label generation.', 'zerohold-shipping' );
+			$note = __( 'Buyer cancelled order after label generation (Carrier confirmed void).', 'zerohold-shipping' );
 			
 			// Ensure it remains visible to vendor so they see the cancellation
 			update_post_meta( $order_id, '_zh_vendor_visible', 'yes' );
 			update_post_meta( $order_id, '_zh_buyer_cancelled_post_label', 'yes' );
-
-			// 🚀 TRIGGER CARRIER API CANCELLATION (VOID SHIPMENT)
-			$this->trigger_carrier_cancellation( $order_id );
 			
 			// REFUND VENDOR SHIPPING COST
 			$this->refund_vendor_shipping_cost( $order_id );
 		} else {
 			// Stage: transit (Scenario D)
-			// Penalty = Base Freight + Retailer Cap
-			$base_freight = (float) get_post_meta( $order_id, '_zh_base_shipping_cost', true );
-			$retailer_cap = (float) get_post_meta( $order_id, '_zh_retailer_cap_amount', true );
-			
-			// If meta is missing (old order), fallback to buyer's shipping total
-			if ( $base_freight <= 0 ) {
-				$base_freight = (float) $order->get_shipping_total();
-			}
-
-			$total_penalty = $base_freight + $retailer_cap;
-			$refund_amount  = max( 0, $order_total - $total_penalty );
-			$note = sprintf( 
-				__( 'Buyer cancelled order DURING TRANSIT. Penalty Applied: ₹%s (Base ₹%s + Cap ₹%s).', 'zerohold-shipping' ), 
-				$total_penalty, $base_freight, $retailer_cap 
-			);
-			
-			update_post_meta( $order_id, '_zh_vendor_visible', 'yes' );
-			update_post_meta( $order_id, '_zh_buyer_cancelled_transit', 'yes' );
-			update_post_meta( $order_id, '_zh_transit_penalty_amount', $total_penalty );
-
-			// VENDOR REFUND: Still refund vendor their share, as they have no fault.
-			$this->refund_vendor_shipping_cost( $order_id );
+			// Block cancellation entirely as per policy
+			wc_add_notice( __( 'Order cannot be cancelled now it\'s in transit.', 'zerohold-shipping' ), 'error' );
+			wp_safe_redirect( wc_get_account_endpoint_url( 'orders' ) );
+			exit;
 		}
 
 		// 2. Perform Refund
@@ -428,10 +420,11 @@ class BuyerCancellationManager {
 	 * Trigger real-time cancellation on the shipping platform.
 	 * 
 	 * @param int $order_id
+	 * @return bool Success of carrier cancellation
 	 */
 	private function trigger_carrier_cancellation( $order_id ) {
 		$platform = get_post_meta( $order_id, '_zh_shipping_platform', true );
-		if ( ! $platform ) return;
+		if ( ! $platform ) return false;
 
 		$adapter = null;
 		if ( $platform === 'shiprocket' ) {
@@ -443,17 +436,23 @@ class BuyerCancellationManager {
 		if ( $adapter ) {
 			$result = $adapter->cancelOrder( $order_id );
 			
-			if ( is_wp_error( $result ) ) {
-				error_log( "ZSS ERROR: Carrier Cancellation Failed for Order #{$order_id}: " . $result->get_error_message() );
+			$success = $result['success'] ?? false;
+			$msg     = $result['message'] ?? 'API connection failed';
+
+			if ( ! $success ) {
+				error_log( "ZSS ERROR: Carrier Cancellation Signal DENIED for Order #{$order_id} - Platform: {$platform}, Response: {$msg}" );
+				return false;
 			} else {
-				$msg = $result['message'] ?? ( isset($result['success']) && $result['success'] ? 'Success' : 'API Error' );
-				error_log( "ZSS LOG: Carrier Cancellation Signal Sent for Order #{$order_id} - Platform: {$platform}, Response: {$msg}" );
+				error_log( "ZSS LOG: Carrier Cancellation Signal SUCCESS for Order #{$order_id} - Platform: {$platform}, Response: {$msg}" );
 				
 				$order = wc_get_order( $order_id );
 				if ( $order ) {
 					$order->add_order_note( sprintf( __( 'Carrier Cancellation Signal sent to %s. Response: %s', 'zerohold-shipping' ), ucfirst($platform), $msg ) );
 				}
+				return true;
 			}
 		}
+
+		return false;
 	}
 }
