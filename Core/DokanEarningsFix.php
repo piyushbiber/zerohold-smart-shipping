@@ -17,6 +17,46 @@ class DokanEarningsFix {
 	public function __construct() {
 		add_filter( 'dokan_shipping_fee_recipient', [ $this, 'route_shipping_to_admin' ], 20, 2 );
 		add_filter( 'woocommerce_get_formatted_order_total', [ $this, 'filter_vendor_order_total' ], 20, 4 );
+		add_filter( 'dokan_get_earning_by_order', [ $this, 'filter_vendor_earnings' ], 20, 3 );
+	}
+
+	/**
+	 * Filter vendor earnings to be 0 for cancelled/refunded orders.
+	 * Also ensures shipping is excluded for other ZSS orders.
+	 */
+	public function filter_vendor_earnings( $earning, $order, $context ) {
+		if ( $context !== 'seller' ) {
+			return $earning;
+		}
+
+		// 1. If order is cancelled or refunded, earning MUST be 0
+		if ( in_array( $order->get_status(), [ 'cancelled', 'refunded' ], true ) ) {
+			return 0;
+		}
+
+		// 2. Otherwise, ensure ZSS shipping is excluded
+		$is_zss = false;
+		foreach ( $order->get_shipping_methods() as $method ) {
+			if ( strpos( $method->get_method_id(), 'zerohold_shipping' ) !== false ) {
+				$is_zss = true;
+				break;
+			}
+		}
+
+		if ( $is_zss ) {
+			$total    = (float) $order->get_total();
+			$shipping = (float) $order->get_shipping_total();
+			// Earning should be total minus shipping (assuming 100% vendor share for remaining)
+			// Note: Dokan might already subtract its commission, so we strictly handle the shipping part.
+			// If Dokan has a commission, it subtracts it from the order total.
+			// Since we route shipping to admin, Dokan technically already excludes it if settings are right,
+			// but this is a fail-safe.
+			if ( (float)$earning > ( $total - $shipping ) ) {
+				return $total - $shipping;
+			}
+		}
+
+		return $earning;
 	}
 
 	/**
