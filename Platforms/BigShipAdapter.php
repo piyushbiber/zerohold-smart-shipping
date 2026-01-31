@@ -314,6 +314,11 @@ class BigShipAdapter implements PlatformInterface {
 		$response = $this->client->post( self::ENDPOINT_MANIFEST_SINGLE, $payload );
 		error_log( "ZSS DEBUG: BigShip Manifest Response: " . print_r( $response, true ) );
 		
+		// Handle WP_Error (timeout, connection issues, etc.)
+		if ( is_wp_error( $response ) ) {
+			return [ 'error' => $response->get_error_message(), 'raw' => $response ];
+		}
+		
 		if ( isset( $response['success'] ) && $response['success'] === true ) {
 			return [ 'status' => 'success', 'message' => $response['message'] ?? 'Manifested successfully' ];
 		}

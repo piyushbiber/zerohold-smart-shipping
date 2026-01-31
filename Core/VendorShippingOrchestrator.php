@@ -175,13 +175,20 @@ class VendorShippingOrchestrator {
 		
 		// BigShip specific: Manifest order with courier BEFORE AWB
 		if ( $adapter instanceof \Zerohold\Shipping\Platforms\BigShipAdapter && ! empty( $shipment->courier_id ) ) {
-			error_log( "ZSS DEBUG: BigShip detected. Manifesting order {$shipment_id} with Courier ID: {$shipment->courier_id}" );
-			$manifest_result = $adapter->manifestOrder( $shipment_id, $shipment->courier_id );
-			error_log( "ZSS DEBUG: Manifest Result: " . print_r( $manifest_result, true ) );
-			if ( isset( $manifest_result['error'] ) ) {
-				return [ 'success' => false, 'message' => 'Manifest failed: ' . $manifest_result['error'] ];
+			// Check if already manifested
+			$already_manifested = get_post_meta( $order_id, '_zh_bigship_manifest_status', true );
+			
+			if ( ! $already_manifested ) {
+				error_log( "ZSS DEBUG: BigShip detected. Manifesting order {$shipment_id} with Courier ID: {$shipment->courier_id}" );
+				$manifest_result = $adapter->manifestOrder( $shipment_id, $shipment->courier_id );
+				error_log( "ZSS DEBUG: Manifest Result: " . print_r( $manifest_result, true ) );
+				if ( isset( $manifest_result['error'] ) ) {
+					return [ 'success' => false, 'message' => 'Manifest failed: ' . $manifest_result['error'] ];
+				}
+				update_post_meta( $order_id, '_zh_bigship_manifest_status', 1 );
+			} else {
+				error_log( "ZSS DEBUG: BigShip order {$shipment_id} already manifested, skipping..." );
 			}
-			update_post_meta( $order_id, '_zh_bigship_manifest_status', 1 );
 		}
 
 		// AWB Assignment
