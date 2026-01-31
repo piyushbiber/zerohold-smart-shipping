@@ -13,9 +13,10 @@ class BigShipAdapter implements PlatformInterface {
 
 	private $client;
 
-	const ENDPOINT_ADD_ORDER      = 'order/add/single';
-	const ENDPOINT_GET_QUOTES     = 'order/shipping/rates';
-	const ENDPOINT_SHIPMENT_DATA  = 'shipment/data';
+	const ENDPOINT_ADD_ORDER       = 'order/add/single';
+	const ENDPOINT_GET_QUOTES      = 'order/shipping/rates';
+	const ENDPOINT_MANIFEST_SINGLE = 'order/manifest/single';
+	const ENDPOINT_SHIPMENT_DATA   = 'shipment/data';
 	const ENDPOINT_TRACK          = 'order/tracking';
 	const ENDPOINT_WALLET_BALANCE = 'Wallet/balance/get';
 	const ENDPOINT_WAREHOUSE_ADD  = 'warehouse/add';
@@ -302,6 +303,23 @@ class BigShipAdapter implements PlatformInterface {
 		];
 	}
 
+	public function manifestOrder( $system_order_id, $courier_id ) {
+		// Manifest order with selected courier (REQUIRED before AWB)
+		$payload = [
+			'system_order_id' => (int) $system_order_id,
+			'courier_id'      => (int) $courier_id
+		];
+		
+		error_log( "ZSS DEBUG: BigShip - Manifesting Order {$system_order_id} with Courier {$courier_id}..." );
+		$response = $this->client->post( self::ENDPOINT_MANIFEST_SINGLE, $payload );
+		error_log( "ZSS DEBUG: BigShip Manifest Response: " . print_r( $response, true ) );
+		
+		if ( isset( $response['success'] ) && $response['success'] === true ) {
+			return [ 'status' => 'success', 'message' => $response['message'] ?? 'Manifested successfully' ];
+		}
+		
+		return [ 'error' => $response['message'] ?? 'Manifest failed', 'raw' => $response ];
+	}
 
 	public function getManifest( $system_order_id ) {
 		// BigShip Manifest: shipment_data_id=3
