@@ -43,6 +43,8 @@ class VendorShippingOrchestrator {
 			return [ 'success' => false, 'message' => 'Order not found' ];
 		}
 
+		error_log( "ZSS DEBUG: === Starting Shipping Pipeline for Order #{$order_id} (Context: {$context}) ===" );
+
 		// Security Guard: Check if order is visible to vendor (cool-off window)
 		if ( apply_filters( 'zh_can_vendor_act_on_order', true, $order_id ) === false ) {
 			return [ 'success' => false, 'message' => 'Order is in cool-off period.' ];
@@ -78,6 +80,7 @@ class VendorShippingOrchestrator {
 
 		// 2. Gather Quotes & Filter by Balance
 		foreach ( $platforms as $key => $adapter ) {
+			error_log( "ZSS DEBUG: Fetching rates for platform: {$key}" );
 			$platform_rates = $adapter->getRates( $shipment );
 			
 			// GUARD: Standardize adapter return (must be an array)
@@ -87,10 +90,12 @@ class VendorShippingOrchestrator {
 			}
 			
 			$quotes[ $key ] = $platform_rates;
+			error_log( "ZSS DEBUG: Found " . count( $platform_rates ) . " rates for {$key}" );
 
 			// Proactive Balance Check
 			if ( ! empty( $quotes[ $key ] ) ) {
 				$balance = $adapter->getWalletBalance();
+				error_log( "ZSS DEBUG: Platform {$key} Balance: ₹{$balance}" );
 				
 				$local_best = 999999;
 				foreach ( (array) $quotes[ $key ] as $q ) {
@@ -99,6 +104,7 @@ class VendorShippingOrchestrator {
 				}
 
 				if ( $balance < $local_best ) {
+					error_log( "ZSS DEBUG: EXCLUDING platform {$key} due to insufficient balance (Best Rate: ₹{$local_best})" );
 					$excluded_platforms[] = $key;
 				}
 			}
@@ -121,6 +127,7 @@ class VendorShippingOrchestrator {
 			$winner = $selector->selectBestRate( $active_quotes );
 
 			if ( ! $winner ) {
+				error_log( "ZSS DEBUG: No valid winner found across active platforms." );
 				$retry = false;
 				continue;
 			}
@@ -129,6 +136,8 @@ class VendorShippingOrchestrator {
 			$winner_platform = $winner->platform;
 			$adapter = $platforms[ $winner_platform ];
 			$selected_adapter = $adapter;
+
+			error_log( "ZSS DEBUG: WINNER SELECTED: {$winner->courier} on {$winner_platform} (Cost: ₹{$winner->base})" );
 
 			// Prepare Shipment
 			$shipment->courier     = $winner->courier; 
@@ -140,7 +149,9 @@ class VendorShippingOrchestrator {
 			}
 
 			// 4. Create Order (Book)
+			error_log( "ZSS DEBUG: Calling createOrder on {$winner_platform} adapter..." );
 			$response = $adapter->createOrder( $shipment );
+			error_log( "ZSS DEBUG: createOrder Response: " . print_r( $response, true ) );
 
 			// 5. Balance Check Fallback
 			if ( $adapter->isBalanceError( $response ) ) {
@@ -164,7 +175,9 @@ class VendorShippingOrchestrator {
 		
 		// BigShip specific: Manifest BEFORE AWB
 		if ( $adapter instanceof \Zerohold\Shipping\Platforms\BigShipAdapter && ! empty( $shipment->courier_id ) ) {
+			error_log( "ZSS DEBUG: BigShip detected. Starting manifest step for Shipment ID: {$shipment_id}, Courier ID: {$shipment->courier_id}" );
 			$manifest_result = $adapter->manifestOrder( $shipment_id, $shipment->courier_id );
+			error_log( "ZSS DEBUG: Manifest Result: " . print_r( $manifest_result, true ) );
 			if ( isset( $manifest_result['error'] ) ) {
 				return [ 'success' => false, 'message' => 'Manifest failed: ' . $manifest_result['error'] ];
 			}
@@ -172,7 +185,9 @@ class VendorShippingOrchestrator {
 		}
 
 		// AWB Assignment
+		error_log( "ZSS DEBUG: Requesting AWB from {$winner_platform}..." );
 		$awb_response = $adapter->generateAWB( $shipment_id );
+		error_log( "ZSS DEBUG: AWB Response: " . print_r( $awb_response, true ) );
 		$awb_success = false;
 
 		if ( $winner_platform === 'shiprocket' ) {
