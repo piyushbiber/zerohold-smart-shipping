@@ -52,7 +52,7 @@ class DokanEarningsFix {
 
 	/**
 	 * Core Logic: Returns ₹0.00 for rejected/cancelled orders.
-	 * For completed orders, returns the full amount (no commission in Phase 1).
+	 * For completed orders, subtracts commission if applicable.
 	 */
 	private function process_earnings_logic( $earning, $order ) {
 		// Check if order is rejected or cancelled
@@ -64,7 +64,15 @@ class DokanEarningsFix {
 			return 0;
 		}
 		
-		// For completed/processing orders, return the earning as-is (no interference)
+		// For completed orders, subtract commission from earnings display
+		if ( $status === 'completed' ) {
+			$commission_amount = get_post_meta( $order->get_id(), '_zh_commission_amount', true );
+			if ( $commission_amount > 0 ) {
+				return $earning - (float) $commission_amount;
+			}
+		}
+		
+		// For other statuses (processing, on-hold, etc.), return earning as-is
 		return $earning;
 	}
 

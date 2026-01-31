@@ -99,6 +99,9 @@ class ZeroHoldSmartShipping {
 		// Bug Fix: Isolate Shipping from Vendor Total
 		new Core\DokanEarningsFix();
 
+		// Initialize Commission Manager (Phase 2)
+		new Core\CommissionManager();
+
 		// Initialize Logistics Background Sync (Phase 2)
 		new Core\LogisticsSynchronizer();
 
@@ -113,6 +116,7 @@ class ZeroHoldSmartShipping {
 				\Zerohold\Shipping\Admin\PincodeImportPage::register();
 			} );
 			new Admin\OrderVisibilitySettings();
+			new Admin\CommissionSettings();
 			new Admin\PlatformControl();
 			new Admin\LogisticsUI();
 		}
