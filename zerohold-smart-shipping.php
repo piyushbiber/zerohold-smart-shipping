@@ -119,6 +119,10 @@ class ZeroHoldSmartShipping {
 		// Register Refund Cleanup Hook
 		add_action( 'woocommerce_order_status_refunded', [ $this, 'cleanup_on_refund' ], 10, 1 );
 
+		// 🚀 RTO Refund Trigger: Fired whenever the status is set to 'RTO Delivered'
+		// This works for both automatic carrier updates and manual admin status changes.
+		add_action( 'woocommerce_order_status_rto-delivered', [ '\Zerohold\Shipping\Core\LogisticsRefundManager', 'process_rto_delivered_refund' ] );
+
 		// Register Shipping Method
 		add_filter( 'woocommerce_shipping_methods', [ $this, 'register_shipping_method' ] );
 		add_action( 'woocommerce_shipping_init', [ $this, 'init_shipping_method' ] );
