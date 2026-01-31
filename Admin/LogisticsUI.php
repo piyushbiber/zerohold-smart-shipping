@@ -73,6 +73,24 @@ class LogisticsUI {
 				<?php endif; ?>
 			</p>
 
+			<?php 
+			$vendor_refund = get_post_meta( $order_id, '_zh_shipping_refund_amount', true );
+			$buyer_refund  = get_post_meta( $order_id, '_zh_rto_buyer_refund_amount', true );
+			$buyer_penalty = get_post_meta( $order_id, '_zh_rto_buyer_penalty_amount', true );
+
+			if ( $vendor_refund || $buyer_refund ) : ?>
+				<div class="zh-rto-settlement" style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 10px; border-radius: 4px; margin-top: 10px; font-size: 12px;">
+					<h4 style="margin: 0 0 5px 0; font-size: 13px; border-bottom: 1px solid #e2e8f0; padding-bottom: 3px;"><?php _e( 'RTO Settlement', 'zerohold-shipping' ); ?></h4>
+					<?php if ( $vendor_refund ) : ?>
+						<p style="margin: 3px 0;"><strong><?php _e( 'Vendor Refund:', 'zerohold-shipping' ); ?></strong> ₹<?php echo number_format( $vendor_refund, 2 ); ?></p>
+					<?php endif; ?>
+					<?php if ( $buyer_refund || $buyer_penalty ) : ?>
+						<p style="margin: 3px 0;"><strong><?php _e( 'Buyer Refund:', 'zerohold-shipping' ); ?></strong> ₹<?php echo number_format( $buyer_refund, 2 ); ?></p>
+						<p style="margin: 3px 0; color: #dc2626; font-size: 11px;">(<?php printf( __( 'Penalty: ₹%s', 'zerohold-shipping' ), number_format( $buyer_penalty, 2 ) ); ?>)</p>
+					<?php endif; ?>
+				</div>
+			<?php endif; ?>
+
 			<hr>
 			<a href="<?php echo esc_url( $sync_url ); ?>" class="button button-secondary" style="width: 100%; text-align: center;">
 				<?php _e( '🔄 Sync Tracking', 'zerohold-shipping' ); ?>

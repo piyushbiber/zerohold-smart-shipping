@@ -33,16 +33,23 @@ class LogisticsRefundManager {
 		error_log( "ZSS RTO: Starting Automated Refund for Order #{$order_id}" );
 
 		// 1. VENDOR REFUND (100% Shipping Reversal)
-		self::handle_vendor_shipping_reversal( $order, $order_id );
+		$vendor_refund = self::handle_vendor_shipping_reversal( $order, $order_id );
 
 		// 2. BUYER SETTLEMENT (Refund remaining balance after Full Shipping + Cap)
-		self::handle_buyer_rto_settlement( $order, $order_id );
+		$buyer_refund_data = self::handle_buyer_rto_settlement( $order, $order_id );
 
 		// 3. Mark as Processed
 		update_post_meta( $order_id, '_zh_rto_refund_processed', 'yes' );
 		update_post_meta( $order_id, '_zh_rto_refund_at', current_time( 'mysql' ) );
 
-		$order->add_order_note( __( 'ZSS: Automated RTO Refund processed for Vendor and Buyer.', 'zerohold-shipping' ) );
+		$summary_note = sprintf(
+			__( "ZSS RTO Settlement Processed:\n- Vendor Refund: ₹%s\n- Buyer Refund: ₹%s (Penalty: ₹%s)", 'zerohold-shipping' ),
+			number_format( $vendor_refund, 2 ),
+			number_format( $buyer_refund_data['refund'], 2 ),
+			number_format( $buyer_refund_data['penalty'], 2 )
+		);
+
+		$order->add_order_note( $summary_note );
 
 		return true;
 	}
@@ -59,8 +66,7 @@ class LogisticsRefundManager {
 		}
 
 		if ( ! $vendor_id ) {
-			error_log( "ZSS RTO: Vendor ID not found for Order #{$order_id}" );
-			return;
+			return 0;
 		}
 
 		// Amount deducted from vendor during label generation
@@ -80,8 +86,10 @@ class LogisticsRefundManager {
 			update_post_meta( $order_id, '_zh_shipping_refund_date', current_time( 'mysql' ) );
 			update_post_meta( $order_id, '_zh_rto_vendor_refunded', 'yes' );
 
-			error_log( "ZSS RTO: Refunded ₹{$shipping_cost} to Vendor #{$vendor_id}" );
+			return $shipping_cost;
 		}
+
+		return 0;
 	}
 
 	/**
@@ -90,8 +98,7 @@ class LogisticsRefundManager {
 	private static function handle_buyer_rto_settlement( $order, $order_id ) {
 		$customer_id = $order->get_customer_id();
 		if ( ! $customer_id ) {
-			error_log( "ZSS RTO: Customer ID not found for Order #{$order_id}" );
-			return;
+			return [ 'refund' => 0, 'penalty' => 0 ];
 		}
 
 		// Full Base Shipping Cost (Carrier Price 100%)
@@ -105,7 +112,7 @@ class LogisticsRefundManager {
 		
 		// The buyer paid the full order total at checkout.
 		// We refund the order total MINUS the penalty (Full Shipping + Cap).
-		$refund_amount = $order_total - $total_penalty;
+		$refund_amount = max( 0, $order_total - $total_penalty );
 
 		if ( $refund_amount > 0 ) {
 			if ( function_exists( 'woo_wallet' ) ) {
@@ -119,10 +126,8 @@ class LogisticsRefundManager {
 			// Move order to refunded state (internal)
 			update_post_meta( $order_id, '_zh_rto_buyer_refund_amount', $refund_amount );
 			update_post_meta( $order_id, '_zh_rto_buyer_penalty_amount', $total_penalty );
-
-			error_log( "ZSS RTO: Refunded ₹{$refund_amount} to Buyer #{$customer_id} (Penalty: ₹{$total_penalty})" );
-		} else {
-			error_log( "ZSS RTO: Penalty (₹{$total_penalty}) exceeds order total (₹{$order_total}). No refund issued to buyer." );
 		}
+
+		return [ 'refund' => $refund_amount, 'penalty' => $total_penalty ];
 	}
 }
