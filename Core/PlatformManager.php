@@ -17,14 +17,27 @@ class PlatformManager {
 	 * @return array
 	 */
 	public static function getEnabledPlatforms() {
-		// Option A: Park Nimbus by excluding it from this list.
-		// Future: enabledPlatforms += Nimbus
+		// Check which platforms are enabled via admin settings
+		$shiprocket_enabled = get_option( 'zh_platform_shiprocket_enabled', 1 );
+		$bigship_enabled = get_option( 'zh_platform_bigship_enabled', 1 );
 		
-		$platforms = [
-		'shiprocket' => new ShiprocketAdapter(), // UNPARKED - Now competing with BigShip
-		'bigship'    => new \Zerohold\Shipping\Platforms\BigShipAdapter(),
-		// 'nimbus'     => new NimbuspostAdapter(), // Parked
-	];
+		$platforms = [];
+		
+		// Only include enabled platforms
+		if ( $shiprocket_enabled ) {
+			$platforms['shiprocket'] = new ShiprocketAdapter();
+		}
+		
+		if ( $bigship_enabled ) {
+			$platforms['bigship'] = new \Zerohold\Shipping\Platforms\BigShipAdapter();
+		}
+		
+		// Fallback: If both are disabled (shouldn't happen due to validation), enable both
+		if ( empty( $platforms ) ) {
+			error_log( 'ZSS WARNING: All platforms disabled. Enabling both as fallback.' );
+			$platforms['shiprocket'] = new ShiprocketAdapter();
+			$platforms['bigship'] = new \Zerohold\Shipping\Platforms\BigShipAdapter();
+		}
 
 		return $platforms;
 	}

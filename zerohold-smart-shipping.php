@@ -113,6 +113,7 @@ class ZeroHoldSmartShipping {
 				\Zerohold\Shipping\Admin\PincodeImportPage::register();
 			} );
 			new Admin\OrderVisibilitySettings();
+			new Admin\PlatformControl();
 			new Admin\LogisticsUI();
 		}
 
