@@ -303,30 +303,8 @@ class BigShipAdapter implements PlatformInterface {
 		];
 	}
 
-	public function manifestOrder( $system_order_id, $courier_id ) {
-		// Step 3: Manifest the order with selected courier
-		// REQUIRED before calling generateAWB
-		
-		$payload = [
-			'system_order_id' => (int) $system_order_id,
-			'courier_id'      => (int) $courier_id
-		];
-		
-		error_log( "ZSS DEBUG: BigShip - Manifesting Order..." );
 
-		// error_log( "ZSS DEBUG: BigShip Manifest Payload: " . print_r( $payload, true ) );
-		$response = $this->client->post( self::ENDPOINT_MANIFEST_ADD, $payload );
-		error_log( "ZSS DEBUG: BigShip Manifest Response: " . print_r( $response, true ) );
-		
-		
-		if ( isset( $response['success'] ) && $response['success'] === true ) {
-			return [ 'status' => 'success', 'message' => $response['message'] ?? 'Manifested' ];
-		}
-		
-		return [ 'error' => $response['message'] ?? 'Manifest failed', 'raw' => $response ];
-	}
-
-	public function generateAWB( $shipment_id ) {
+	public function generateAWB( $shipment_id, $courier_id = null ) {
 		// BigShip Step 1: Generate AWB (shipment_data_id=1)
         // Returns master_awb, courier_id, courier_name
         
@@ -335,9 +313,14 @@ class BigShipAdapter implements PlatformInterface {
 			'shipment_data_id' => 1,
 			'system_order_id'  => $shipment_id
 		];
+
+		if ( $courier_id ) {
+			$params['courier_id'] = (int) $courier_id;
+		}
 		
 		// error_log( "ZSS DEBUG: BigShip AWB Params (sh_id=1): " . print_r( $params, true ) );
 		$response = $this->client->post( self::ENDPOINT_SHIPMENT_DATA, $params );
+		// error_log( "ZSS DEBUG: BigShip AWB Response: " . print_r( $response, true ) );
 		// error_log( "ZSS DEBUG: BigShip AWB Response: " . print_r( $response, true ) );
         
         

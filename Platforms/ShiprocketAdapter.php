@@ -132,7 +132,7 @@ class ShiprocketAdapter implements PlatformInterface {
 		return [ $quote ];
 	}
 
-	public function generateAWB( $shipment_id ) {
+	public function generateAWB( $shipment_id, $courier_id = null ) {
 		$payload = [
 			'shipment_id' => $shipment_id,
 			'courier_id'  => null, // Auto-assign cheapest

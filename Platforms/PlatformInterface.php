@@ -19,7 +19,7 @@ interface PlatformInterface {
 	 */
 	public function createOrder( $shipment );
 
-	public function generateAWB( $shipment_id );
+	public function generateAWB( $shipment_id, $courier_id = null );
 	public function getLabel( $shipment_id );
 	public function track( $shipment_id );
 

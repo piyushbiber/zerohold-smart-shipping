@@ -173,20 +173,9 @@ class VendorShippingOrchestrator {
 
 		// 6. Post-Booking Steps (AWB, Manifesting, Label)
 		
-		// BigShip specific: Manifest BEFORE AWB
-		if ( $adapter instanceof \Zerohold\Shipping\Platforms\BigShipAdapter && ! empty( $shipment->courier_id ) ) {
-			error_log( "ZSS DEBUG: BigShip detected. Starting manifest step for Shipment ID: {$shipment_id}, Courier ID: {$shipment->courier_id}" );
-			$manifest_result = $adapter->manifestOrder( $shipment_id, $shipment->courier_id );
-			error_log( "ZSS DEBUG: Manifest Result: " . print_r( $manifest_result, true ) );
-			if ( isset( $manifest_result['error'] ) ) {
-				return [ 'success' => false, 'message' => 'Manifest failed: ' . $manifest_result['error'] ];
-			}
-			update_post_meta( $order_id, '_zh_bigship_pickup_status', 1 );
-		}
-
 		// AWB Assignment
-		error_log( "ZSS DEBUG: Requesting AWB from {$winner_platform}..." );
-		$awb_response = $adapter->generateAWB( $shipment_id );
+		error_log( "ZSS DEBUG: Requesting AWB from {$winner_platform} with Courier ID: " . ( $shipment->courier_id ?: 'null' ) );
+		$awb_response = $adapter->generateAWB( $shipment_id, $shipment->courier_id );
 		error_log( "ZSS DEBUG: AWB Response: " . print_r( $awb_response, true ) );
 		$awb_success = false;
 
