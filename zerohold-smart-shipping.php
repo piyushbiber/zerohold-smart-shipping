@@ -69,6 +69,42 @@ add_action( 'admin_init', function() {
 	}
 } );
 
+/* 
+ * --------------------------------------------------------------------------
+ * DEBUG & TESTING SECTION (FOR DEVELOPERS)
+ * --------------------------------------------------------------------------
+ * The following hooks are temporary tools for testing RTO system behavior.
+ * TO REMOVE: Delete the entire block between these dashed lines.
+ * --------------------------------------------------------------------------
+ */
+
+// MOCK RTO TEST: Simulate an "Undelivered" result to verify UI Badges and Meta Box.
+// USAGE: Visit [your-site.com]/wp-admin/?zh_test_rto=ORDER_ID
+add_action( 'admin_init', function() {
+    if ( isset( $_GET['zh_test_rto'] ) ) {
+        $order_id = intval( $_GET['zh_test_rto'] );
+        $order = wc_get_order( $order_id );
+
+        if ( ! $order ) {
+            wp_die("ZSS DEBUG: Order #$order_id not found.");
+        }
+
+        // 1. Manually set logistics metadata (Simulating a real carrier response)
+        update_post_meta( $order_id, '_zh_logistics_status', 'Undelivered' );
+        update_post_meta( $order_id, '_zh_rto_reason', 'MOCK TEST: Customer refused delivery (Address mismatch simulation)' );
+        update_post_meta( $order_id, '_zh_last_logistics_sync', time() );
+
+        // 2. Force status change to 'RTO Initiated'
+        $order->update_status( 'wc-rto-initiated', 'ZSS DEBUG Hook: Forced RTO state for UI verification.' );
+
+        // 3. Redirect back to order page to see results
+        wp_safe_redirect( admin_url( 'post.php?post=' . $order_id . '&action=edit' ) );
+        exit;
+    }
+} );
+
+// --------------------------- END OF DEBUG SECTION ---------------------------
+
 // Main Plugin Entry Point
 class ZeroHoldSmartShipping {
 	public function __construct() {
@@ -99,6 +135,9 @@ class ZeroHoldSmartShipping {
 		// Bug Fix: Isolate Shipping from Vendor Total
 		new Core\DokanEarningsFix();
 
+		// Initialize Logistics Background Sync (Phase 2)
+		new Core\LogisticsSynchronizer();
+
 		// Initialize Platforms (for testing auth)
 		new Platforms\ShiprocketAdapter();
 
@@ -110,6 +149,7 @@ class ZeroHoldSmartShipping {
 				\Zerohold\Shipping\Admin\PincodeImportPage::register();
 			} );
 			new Admin\OrderVisibilitySettings();
+			new Admin\LogisticsUI();
 		}
 
 		// Register Refund Cleanup Hook
@@ -121,6 +161,11 @@ class ZeroHoldSmartShipping {
 
 		// Register Custom Cron Schedules
 		add_filter( 'cron_schedules', [ $this, 'register_custom_cron_schedules' ] );
+
+		// Schedule Background Sync
+		if ( ! wp_next_scheduled( 'zh_logistics_sync_cron' ) ) {
+			wp_schedule_event( time(), 'twicedaily', 'zh_logistics_sync_cron' );
+		}
 	}
 
 	/**

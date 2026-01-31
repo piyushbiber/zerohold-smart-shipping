@@ -406,6 +406,16 @@ class BigShipAdapter implements PlatformInterface {
 		return $this->client->get( self::ENDPOINT_TRACK, $params );
 	}
 
+	public function trackBulk( $awbs ) {
+		// BigShip has no bulk API, so we loop individually.
+		// NOTE: LogisticsSynchronizer should call this sparingly.
+		$results = [];
+		foreach ( (array) $awbs as $awb ) {
+			$results[ $awb ] = $this->track( $awb );
+		}
+		return $results;
+	}
+
 	public function estimateRates( $origin_pincode, $destination_pincodes, $slab ) {
 		$results = [];
 		foreach ( (array) $destination_pincodes as $zone => $dest_pin ) {

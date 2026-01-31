@@ -18,6 +18,7 @@ class ShiprocketAdapter implements PlatformInterface {
 	const ENDPOINT_LABEL_GENERATE   = 'courier/generate/label';
 	const ENDPOINT_PICKUP_GENERATE  = 'courier/generate/pickup';
 	const ENDPOINT_TRACK_AWB        = 'courier/track/awb/';
+	const ENDPOINT_TRACK_BULK       = 'courier/track/awbs';
 	const ENDPOINT_WALLET_BALANCE   = 'account/details/wallet-balance';
 	const ENDPOINT_WAREHOUSE_ADD    = 'settings/company/addpickup';
 	const ENDPOINT_ORDER_CANCEL     = 'orders/cancel/shipment/awbs';
@@ -179,6 +180,14 @@ class ShiprocketAdapter implements PlatformInterface {
 	public function track( $awb ) {
 		// GET /courier/track/awb/[AWB]
 		return $this->client->get( self::ENDPOINT_TRACK_AWB . $awb );
+	}
+
+	public function trackBulk( $awbs ) {
+		// POST /courier/track/awbs
+		$payload = [
+			'awbs' => array_values( (array) $awbs )
+		];
+		return $this->client->post( self::ENDPOINT_TRACK_BULK, $payload );
 	}
 
 	public function estimateRates( $origin_pincode, $destination_pincodes, $slab ) {

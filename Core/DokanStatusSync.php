@@ -27,6 +27,7 @@ class DokanStatusSync {
 			'refund-cancelled' => __( 'Refund Cancelled', 'zerohold-shipping' ),
 			'return-rejected'  => __( 'Return Rejected', 'zerohold-shipping' ),
 			'return-cancelled' => __( 'Return Cancelled', 'zerohold-shipping' ),
+			'rto-initiated'    => __( 'RTO Initiated', 'zerohold-shipping' ),
 		];
 
 		// 1. Register with WooCommerce Core
@@ -116,6 +117,9 @@ class DokanStatusSync {
 			.dokan-dashboard .dokan-orders-content .status-return-rejected,
 			.dokan-dashboard .dokan-orders-content .return-rejected,
 			.dokan-dashboard .dokan-orders-content .status-return-cancelled { background-color: #fee2e2 !important; color: #991b1b !important; border: 1px solid #fecaca !important; padding: 2px 8px; border-radius: 4px; font-weight: 600; display: inline-block; white-space: nowrap; }
+			
+			.dokan-dashboard .dokan-orders-content .status-rto-initiated,
+			.dokan-dashboard .dokan-orders-content .rto-initiated { background-color: #fff7ed !important; color: #9a3412 !important; border: 1px solid #fdba74 !important; padding: 2px 8px; border-radius: 4px; font-weight: 600; display: inline-block; white-space: nowrap; }
 			
 			/* Fallback for empty badges */
 			.dokan-dashboard .dokan-orders-content .dokan-label:empty::before { content: "Unknown Status"; color: #999; font-style: italic; }
