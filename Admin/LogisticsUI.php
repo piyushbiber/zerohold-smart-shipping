@@ -25,18 +25,21 @@ class LogisticsUI {
 	}
 
 	public function add_logistics_meta_box() {
-		add_meta_box(
-			'zh_logistics_info',
-			__( 'Logistics & Tracking', 'zerohold-shipping' ),
-			[ $this, 'render_meta_box' ],
-			'shop_order',
-			'side',
-			'high'
-		);
+		$screens = [ 'shop_order', 'woocommerce_page_wc-orders' ];
+		foreach ( $screens as $screen ) {
+			add_meta_box(
+				'zh_logistics_info',
+				__( 'Logistics & Tracking', 'zerohold-shipping' ),
+				[ $this, 'render_meta_box' ],
+				$screen,
+				'side',
+				'high'
+			);
+		}
 	}
 
-	public function render_meta_box( $post ) {
-		$order_id = $post->ID;
+	public function render_meta_box( $post_or_order ) {
+		$order_id = ( $post_or_order instanceof \WP_Post ) ? $post_or_order->ID : $post_or_order->get_id();
 		$status   = get_post_meta( $order_id, '_zh_logistics_status', true ) ?: 'Not Synced';
 		$last_sync = get_post_meta( $order_id, '_zh_last_logistics_sync', true );
 		$platform  = get_post_meta( $order_id, '_zh_shipping_platform', true );
