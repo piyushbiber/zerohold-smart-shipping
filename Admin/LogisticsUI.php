@@ -22,6 +22,9 @@ class LogisticsUI {
 
 		// 3. Auto-sync on Order View
 		add_action( 'woocommerce_admin_order_data_after_order_details', [ $this, 'trigger_lazy_sync' ] );
+
+		// 4. Show Sync Notices
+		add_action( 'admin_notices', [ $this, 'display_sync_notices' ] );
 	}
 
 	public function add_logistics_meta_box() {
@@ -95,20 +98,49 @@ class LogisticsUI {
 
 		$order_id = intval( $_GET['zh_sync_tracking'] );
 		if ( ! wp_verify_nonce( $_GET['_wpnonce'], 'zh_sync_tracking_nonce' ) ) {
-			return;
+			wp_die( __( 'Security check failed.', 'zerohold-shipping' ) );
 		}
 
 		$sync = new \Zerohold\Shipping\Core\LogisticsSynchronizer();
 		$result = $sync->sync_order( $order_id );
 
+		$order = wc_get_order( $order_id );
+		$redirect_url = $order ? $order->get_edit_order_url() : admin_url( 'admin.php?page=wc-orders' );
+
 		if ( $result['success'] ) {
-			wc_add_notice( sprintf( __( 'Tracking synced. Status: %s', 'zerohold-shipping' ), $result['status'] ), 'success' );
+			$redirect_url = add_query_arg( [
+				'zh_tracking_synced' => 1,
+				'zh_sync_status'      => urlencode( $result['status'] )
+			], $redirect_url );
 		} else {
-			wc_add_notice( sprintf( __( 'Sync failed: %s', 'zerohold-shipping' ), $result['message'] ), 'error' );
+			$redirect_url = add_query_arg( [
+				'zh_tracking_failed' => 1,
+				'zh_sync_error'      => urlencode( $result['message'] )
+			], $redirect_url );
 		}
 
-		wp_safe_redirect( admin_url( 'post.php?post=' . $order_id . '&action=edit' ) );
+		wp_safe_redirect( $redirect_url );
 		exit;
+	}
+
+	public function display_sync_notices() {
+		if ( isset( $_GET['zh_tracking_synced'] ) ) {
+			$status = isset( $_GET['zh_sync_status'] ) ? sanitize_text_field( $_GET['zh_sync_status'] ) : '';
+			?>
+			<div class="notice notice-success is-dismissible">
+				<p><?php printf( __( 'Tracking synchronized successfully. Status: %s', 'zerohold-shipping' ), '<strong>' . esc_html( $status ) . '</strong>' ); ?></p>
+			</div>
+			<?php
+		}
+
+		if ( isset( $_GET['zh_tracking_failed'] ) ) {
+			$error = isset( $_GET['zh_sync_error'] ) ? sanitize_text_field( $_GET['zh_sync_error'] ) : 'Unknown error';
+			?>
+			<div class="notice notice-error is-dismissible">
+				<p><?php printf( __( 'Tracking sync failed: %s', 'zerohold-shipping' ), esc_html( $error ) ); ?></p>
+			</div>
+			<?php
+		}
 	}
 
 	/**

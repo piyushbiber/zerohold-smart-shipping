@@ -22,25 +22,21 @@ class LogisticsSynchronizer {
 	 * Main Background Sync Logic
 	 */
 	public function sync_all() {
-		global $wpdb;
-
 		// 1. Fetch Orders Needing Sync
-		// Criteria: Label Generated, Status not terminal, Created last 30 days
-		$active_statuses = [ 'wc-processing', 'wc-on-hold', 'wc-rto-initiated' ];
-		$statuses_str = "'" . implode( "','", $active_statuses ) . "'";
+		// Criteria: Status not terminal, Created last 30 days, has platform and AWB
+		$args = [
+			'status'     => [ 'processing', 'on-hold', 'rto-initiated' ],
+			'limit'      => -1,
+			'date_after' => date( 'Y-m-d', strtotime( '-30 days' ) ),
+			'meta_query' => [
+				[
+					'key'     => '_zh_shipping_platform',
+					'compare' => 'EXISTS',
+				]
+			],
+		];
 		
-		$query = "
-			SELECT p.ID, pm_p.meta_value as platform, pm_awb.meta_value as awb
-			FROM {$wpdb->posts} p
-			JOIN {$wpdb->postmeta} pm_p ON p.ID = pm_p.post_id AND pm_p.meta_key = '_zh_shipping_platform'
-			JOIN {$wpdb->postmeta} pm_awb ON p.ID = pm_awb.post_id AND (pm_awb.meta_key = '_zh_shiprocket_awb' OR pm_awb.meta_key = '_zh_awb')
-			WHERE p.post_type = 'shop_order'
-			AND p.post_status IN ($statuses_str)
-			AND p.post_date > DATE_SUB(NOW(), INTERVAL 30 DAY)
-			ORDER BY p.post_date DESC
-		";
-
-		$orders = $wpdb->get_results( $query );
+		$orders = wc_get_orders( $args );
 		if ( empty( $orders ) ) {
 			return;
 		}
@@ -51,15 +47,23 @@ class LogisticsSynchronizer {
 			'bigship'    => []
 		];
 
-		foreach ( $orders as $o ) {
+		foreach ( $orders as $order ) {
+			$order_id = $order->get_id();
+			$platform = $order->get_meta( '_zh_shipping_platform' );
+			$awb      = $order->get_meta( '_zh_shiprocket_awb' ) ?: $order->get_meta( '_zh_awb' );
+
+			if ( ! $awb ) {
+				continue;
+			}
+
 			// Throttle: Only sync if last sync > 12 hours (wider for background)
-			$last_sync = (int) get_post_meta( $o->ID, '_zh_last_logistics_sync', true );
+			$last_sync = (int) $order->get_meta( '_zh_last_logistics_sync' );
 			if ( ( time() - $last_sync ) < ( 12 * HOUR_IN_SECONDS ) ) {
 				continue;
 			}
 			
-			if ( isset( $batched[ $o->platform ] ) ) {
-				$batched[ $o->platform ][ $o->ID ] = $o->awb;
+			if ( isset( $batched[ $platform ] ) ) {
+				$batched[ $platform ][ $order_id ] = $awb;
 			}
 		}
 
