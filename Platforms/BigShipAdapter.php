@@ -15,8 +15,7 @@ class BigShipAdapter implements PlatformInterface {
 
 	const ENDPOINT_ADD_ORDER      = 'order/add/single';
 	const ENDPOINT_GET_QUOTES     = 'order/shipping/rates';
-	const ENDPOINT_MANIFEST_ADD   = 'order/manifest/add';
-	const ENDPOINT_SHIPMENT_DATA  = 'order/getShippingLabelAndInvoice';
+	const ENDPOINT_SHIPMENT_DATA  = 'shipment/data';
 	const ENDPOINT_TRACK          = 'order/tracking';
 	const ENDPOINT_WALLET_BALANCE = 'Wallet/balance/get';
 	const ENDPOINT_WAREHOUSE_ADD  = 'warehouse/add';
@@ -304,23 +303,23 @@ class BigShipAdapter implements PlatformInterface {
 	}
 
 
-	public function manifestOrder( $system_order_id, $courier_id ) {
-		// Mandatory Step for BigShip before AWB/Label
-		// Note: Using Query Params for manifest too as it's part of the order/shipment surface
+	public function getManifest( $system_order_id ) {
+		// BigShip Manifest: shipment_data_id=3
 		$params = [
-			'system_order_id' => (int) $system_order_id,
-			'courier_id'      => (int) $courier_id
+			'shipment_data_id' => 3,
+			'system_order_id'  => (int) $system_order_id
 		];
 		
-		error_log( "ZSS DEBUG: BigShip - Manifesting Order..." );
-		$response = $this->client->post( self::ENDPOINT_MANIFEST_ADD, [], $params );
-		error_log( "ZSS DEBUG: BigShip Manifest Response: " . print_r( $response, true ) );
+		$response = $this->client->post( self::ENDPOINT_SHIPMENT_DATA, [], $params );
 		
-		if ( isset( $response['success'] ) && $response['success'] === true ) {
-			return [ 'status' => 'success', 'message' => $response['message'] ?? 'Manifested' ];
+		if ( isset( $response['success'] ) && $response['success'] === true && ! empty( $response['data']['res_FileContent'] ) ) {
+			return [
+				'manifest_url' => $response['data']['res_FileContent'], // Base64 PDF
+				'filename'     => $response['data']['res_FileName'] ?? 'manifest.pdf'
+			];
 		}
 		
-		return [ 'error' => $response['message'] ?? 'Manifest failed', 'raw' => $response ];
+		return [ 'error' => $response['message'] ?? 'Manifest generation failed' ];
 	}
 
 	public function generateAWB( $shipment_id, $courier_id = null ) {
