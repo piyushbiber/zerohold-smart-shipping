@@ -17,22 +17,10 @@ class DokanEarningsFix {
 	public function __construct() {
 		add_filter( 'dokan_shipping_fee_recipient', [ $this, 'route_shipping_to_admin' ], 20, 2 );
 		
-		// PHASE 1: Disabled earnings interference - Let Dokan handle natively
-		// PHASE 2: Will re-enable with custom commission logic
-		/*
-		add_filter( 'woocommerce_get_formatted_order_total', [ $this, 'filter_vendor_order_total' ], 20, 4 );
-		
-		// 🛡️ PRIMARY: Intercept earnings with ULTRA-HIGH priority (Overrides Dokan's internal table values)
+		// PHASE 1: Re-enabled ONLY for rejected/cancelled orders
+		// These filters ensure rejected orders show ₹0.00 in earnings column
 		add_filter( 'dokan_get_earning_from_order_table', [ $this, 'filter_vendor_earnings_raw' ], 999, 4 );
 		add_filter( 'dokan_get_earning_by_order', [ $this, 'filter_vendor_earnings_object' ], 999, 3 );
-
-		// 🆕 SOURCE-FIX: Properly write metadata at order creation
-		add_action( 'woocommerce_checkout_create_order_shipping_item', [ $this, 'set_shipping_item_recipient' ], 20, 4 );
-		add_action( 'woocommerce_checkout_order_processed', [ $this, 'set_order_level_shipping_recipient' ], 20, 3 );
-		add_filter( 'dokan_order_admin_commission', [ $this, 'reinforce_admin_commission' ], 20, 3 );
-		add_filter( 'dokan_order_net_amount', [ $this, 'filter_net_amount' ], 20, 2 );
-		add_filter( 'dokan_orders_vendor_net_amount', [ $this, 'filter_net_amount_vendor' ], 20, 5 );
-		*/
 	}
 
 	/**
@@ -63,29 +51,20 @@ class DokanEarningsFix {
 	}
 
 	/**
-	 * Core Logic: Ensures "Actual Price" (Total - Shipping) is ALWAYS used for ZeroHold orders.
-	 * This prevents shipping charges from leaking into vendor earnings after rejection/refund.
+	 * Core Logic: Returns ₹0.00 for rejected/cancelled orders.
+	 * For completed orders, returns the full amount (no commission in Phase 1).
 	 */
 	private function process_earnings_logic( $earning, $order ) {
-		// Identify ZSS Orders
-		$is_zss = false;
-		foreach ( $order->get_shipping_methods() as $method ) {
-			if ( strpos( $method->get_method_id(), 'zerohold_shipping' ) !== false ) {
-				$is_zss = true;
-				break;
-			}
+		// Check if order is rejected or cancelled
+		$status = $order->get_status();
+		$rejected_statuses = [ 'cancelled', 'refunded', 'failed', 'rejected' ];
+		
+		if ( in_array( $status, $rejected_statuses, true ) ) {
+			// Rejected/cancelled orders should show ₹0.00 earnings
+			return 0;
 		}
-
-		if ( $is_zss ) {
-			$total    = (float) $order->get_total();
-			$shipping = (float) $order->get_shipping_total();
-			
-			// For ZeroHold orders, the vendor ALWAYS receives only the item subtotal (minus commission if any).
-			// Since ZeroHold shipping belongs to Admin, we must ensure it's never included in vendor's 'Earning' column.
-			// Even if Dokan's internal calculation defaults to the full total (e.g., during rejection).
-			return $total - $shipping;
-		}
-
+		
+		// For completed/processing orders, return the earning as-is (no interference)
 		return $earning;
 	}
 
