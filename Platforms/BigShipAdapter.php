@@ -322,6 +322,8 @@ class BigShipAdapter implements PlatformInterface {
 		
 		return [ 'error' => $response['message'] ?? 'Manifest failed', 'raw' => $response ];
 	}
+
+	public function generateAWB( $shipment_id, $courier_id = null ) {
 		// BigShip Step 1: Generate AWB (shipment_data_id=1)
         // Returns master_awb, courier_id, courier_name
         
@@ -337,7 +339,6 @@ class BigShipAdapter implements PlatformInterface {
 		
 		// Passing empty array for $data and $params for $query_args
 		$response = $this->client->post( self::ENDPOINT_SHIPMENT_DATA, [], $params );
-		// error_log( "ZSS DEBUG: BigShip AWB Response: " . print_r( $response, true ) );
 		// error_log( "ZSS DEBUG: BigShip AWB Response: " . print_r( $response, true ) );
         
         
