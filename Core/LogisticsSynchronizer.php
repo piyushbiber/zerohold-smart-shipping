@@ -290,6 +290,11 @@ class LogisticsSynchronizer {
 			
 			update_post_meta( $order_id, '_zh_rto_reason', $reason );
 			update_post_meta( $order_id, '_zh_rto_date', current_time( 'mysql' ) );
+
+			// 🚀 AUTOMATED REFUND TRIGGER (Phase 4)
+			if ( $target_status === 'wc-rto-delivered' ) {
+				\Zerohold\Shipping\Core\LogisticsRefundManager::process_rto_delivered_refund( $order_id );
+			}
 			
 			error_log( "ZSS RTO ALERT: Order #{$order_id} moved to {$target_status}. Reason: {$reason}" );
 		}

@@ -332,8 +332,9 @@ class DokanStatementIntegration {
 
 			// Title and Description
 			if ( $is_refund ) {
-				$title = __( 'Shipping Refund', 'zerohold-shipping' );
-				$desc  = sprintf( 'Shipping Refund for Order #%d (Buyer Cancellation)', $order_id );
+				$is_rto_refund = get_post_meta( $order_id, '_zh_rto_vendor_refunded', true ) === 'yes';
+				$title = $is_rto_refund ? __( 'RTO Shipping Reversal', 'zerohold-shipping' ) : __( 'Shipping Refund', 'zerohold-shipping' );
+				$desc  = $is_rto_refund ? sprintf( 'Shipping Refund for Order #%d (RTO Delivered)', $order_id ) : sprintf( 'Shipping Refund for Order #%d (Buyer Cancellation)', $order_id );
 			} elseif ( $is_return ) {
 				$title = __( 'Return Shipping', 'zerohold-shipping' );
 				$desc  = sprintf( 'Return Shipping for Order #%d', $order_id );
