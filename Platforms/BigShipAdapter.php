@@ -16,8 +16,8 @@ class BigShipAdapter implements PlatformInterface {
 	const ENDPOINT_ADD_ORDER      = 'order/add/single';
 	const ENDPOINT_GET_QUOTES     = 'order/shipping/rates';
 	const ENDPOINT_MANIFEST_ADD   = 'order/manifest/add';
-	const ENDPOINT_SHIPMENT_DATA  = 'getShippingLabelAndInvoice';
-	const ENDPOINT_TRACK          = 'tracking';
+	const ENDPOINT_SHIPMENT_DATA  = 'order/getShippingLabelAndInvoice';
+	const ENDPOINT_TRACK          = 'order/tracking';
 	const ENDPOINT_WALLET_BALANCE = 'Wallet/balance/get';
 	const ENDPOINT_WAREHOUSE_ADD  = 'warehouse/add';
 	const ENDPOINT_WAREHOUSE_LIST = 'warehouse/get/list';
@@ -304,22 +304,39 @@ class BigShipAdapter implements PlatformInterface {
 	}
 
 
-	public function generateAWB( $shipment_id, $courier_id = null ) {
+	public function manifestOrder( $system_order_id, $courier_id ) {
+		// Mandatory Step for BigShip before AWB/Label
+		// Note: Using Query Params for manifest too as it's part of the order/shipment surface
+		$params = [
+			'system_order_id' => (int) $system_order_id,
+			'courier_id'      => (int) $courier_id
+		];
+		
+		error_log( "ZSS DEBUG: BigShip - Manifesting Order..." );
+		$response = $this->client->post( self::ENDPOINT_MANIFEST_ADD, [], $params );
+		error_log( "ZSS DEBUG: BigShip Manifest Response: " . print_r( $response, true ) );
+		
+		if ( isset( $response['success'] ) && $response['success'] === true ) {
+			return [ 'status' => 'success', 'message' => $response['message'] ?? 'Manifested' ];
+		}
+		
+		return [ 'error' => $response['message'] ?? 'Manifest failed', 'raw' => $response ];
+	}
 		// BigShip Step 1: Generate AWB (shipment_data_id=1)
         // Returns master_awb, courier_id, courier_name
         
 		// BigShip uses POST with query params (not GET!)
 		$params = [
 			'shipment_data_id' => 1,
-			'system_order_id'  => $shipment_id
+			'system_order_id'  => (int) $shipment_id
 		];
 
 		if ( $courier_id ) {
 			$params['courier_id'] = (int) $courier_id;
 		}
 		
-		// error_log( "ZSS DEBUG: BigShip AWB Params (sh_id=1): " . print_r( $params, true ) );
-		$response = $this->client->post( self::ENDPOINT_SHIPMENT_DATA, $params );
+		// Passing empty array for $data and $params for $query_args
+		$response = $this->client->post( self::ENDPOINT_SHIPMENT_DATA, [], $params );
 		// error_log( "ZSS DEBUG: BigShip AWB Response: " . print_r( $response, true ) );
 		// error_log( "ZSS DEBUG: BigShip AWB Response: " . print_r( $response, true ) );
         
@@ -345,11 +362,11 @@ class BigShipAdapter implements PlatformInterface {
 		// BigShip uses POST with query params (not GET!)
 		$params = [
 			'shipment_data_id' => 2,
-			'system_order_id'  => $shipment_id
+			'system_order_id'  => (int) $shipment_id
 		];
 		
-		// error_log( "ZSS DEBUG: BigShip Label Params (sh_id=2): " . print_r( $params, true ) );
-		$response = $this->client->post( self::ENDPOINT_SHIPMENT_DATA, $params );
+		// Passing empty array for $data and $params for $query_args
+		$response = $this->client->post( self::ENDPOINT_SHIPMENT_DATA, [], $params );
 		// error_log( "ZSS DEBUG: BigShip Label Response Base64 Length: " . ( isset( $response['data']['res_FileContent'] ) ? strlen( $response['data']['res_FileContent'] ) : 'N/A' ) );
         
         
