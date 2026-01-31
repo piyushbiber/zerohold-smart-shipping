@@ -188,7 +188,7 @@ class LogisticsSynchronizer {
 	private function process_tracking_data( $order, $tracking, $platform ) {
 		$order_id = $order->get_id();
 		$status_label = '';
-		$is_rto = false;
+		$target_rto_status = ''; // empty if not RTO
 		$rto_reason = '';
 
 		if ( $platform === 'shiprocket' ) {
@@ -199,13 +199,30 @@ class LogisticsSynchronizer {
 			
 			$status_label = $current_status;
 
-			// Logic: Scan for RTO status codes (11, 13, 14) or keywords
-			$rto_codes = [ 11, 13, 14 ];
+			// Logic: Scan for RTO status codes
 			$shipment_status = (int) ( $data['shipment_status'] ?? 0 );
 
-			if ( in_array( $shipment_status, $rto_codes ) || stripos( $current_status, 'RTO' ) !== false ) {
-				$is_rto = true;
-				// Get latest activity as reason
+			if ( $shipment_status === 11 ) {
+				// 11 = RTO Initiated. Check if moving.
+				$target_rto_status = 'wc-rto-initiated';
+				if ( stripos( $current_status, 'Transit' ) !== false ) {
+					$target_rto_status = 'wc-rto-transit';
+				}
+			} elseif ( $shipment_status === 13 ) {
+				// 13 = RTO Delivered
+				$target_rto_status = 'wc-rto-delivered';
+			} elseif ( $shipment_status === 14 ) {
+				// 14 = Lost
+				$target_rto_status = 'wc-rto-initiated';
+				$rto_reason = __( 'CARRIER ALERT: Shipment marked as LOST.', 'zerohold-shipping' );
+			} elseif ( stripos( $current_status, 'RTO' ) !== false || stripos( $current_status, 'Undelivered' ) !== false ) {
+				$target_rto_status = 'wc-rto-initiated';
+				if ( stripos( $current_status, 'Transit' ) !== false ) {
+					$target_rto_status = 'wc-rto-transit';
+				}
+			}
+
+			if ( $target_rto_status && empty( $rto_reason ) ) {
 				$rto_reason = ! empty( $activities ) ? $activities[0]['activity'] : $current_status;
 			}
 		} elseif ( $platform === 'bigship' ) {
@@ -220,10 +237,19 @@ class LogisticsSynchronizer {
 				$status_label = $histories[0]['scan_status'] ?? '';
 			}
 
-			// BigShip RTO Statuses: 7. Undelivered, 8. RTO In Transit, 9. RTO Delivered, 10. Lost
-			$rto_statuses = [ 'Undelivered', 'RTO In Transit', 'RTO Delivered', 'Lost' ];
-			if ( in_array( $status_label, $rto_statuses ) ) {
-				$is_rto = true;
+			// Map to granular statuses
+			if ( $status_label === 'Undelivered' ) {
+				$target_rto_status = 'wc-rto-initiated';
+			} elseif ( $status_label === 'RTO In Transit' ) {
+				$target_rto_status = 'wc-rto-transit';
+			} elseif ( $status_label === 'RTO Delivered' ) {
+				$target_rto_status = 'wc-rto-delivered';
+			} elseif ( $status_label === 'Lost' ) {
+				$target_rto_status = 'wc-rto-initiated';
+				$rto_reason = __( 'CARRIER ALERT: Shipment marked as LOST.', 'zerohold-shipping' );
+			}
+
+			if ( $target_rto_status && empty( $rto_reason ) ) {
 				$rto_reason = ! empty( $histories ) ? ( $histories[0]['scan_remarks'] ?? $histories[0]['scan_status'] ) : $status_label;
 			}
 		}
@@ -232,34 +258,40 @@ class LogisticsSynchronizer {
 		update_post_meta( $order_id, '_zh_logistics_status', $status_label );
 		update_post_meta( $order_id, '_zh_last_logistics_sync', time() );
 
-		// 2. Handle RTO Logic
-		if ( $is_rto ) {
-			$this->handle_rto_detection( $order, $status_label, $rto_reason );
+		// 2. Handle RTO Logic Transitions
+		if ( $target_rto_status ) {
+			$this->handle_rto_detection( $order, $status_label, $rto_reason, $target_rto_status );
 		}
 
 		return [
 			'success' => true,
 			'status'  => $status_label,
-			'is_rto'  => $is_rto,
+			'is_rto'  => ! empty( $target_rto_status ),
 			'reason'  => $rto_reason
 		];
 	}
 
 	/**
-	 * Transition order to RTO status and add notes.
+	 * Transition order through RTO stages (Initiated -> Transit -> Delivered)
 	 */
-	private function handle_rto_detection( $order, $status, $reason ) {
+	private function handle_rto_detection( $order, $status, $reason, $target_status ) {
 		$order_id = $order->get_id();
+		$current_status = $order->get_status();
 		
-		// Only transition if not already in RTO status
-		if ( $order->get_status() !== 'rto-initiated' ) {
-			$order->update_status( 'wc-rto-initiated', sprintf( __( 'RTO Detected by ZSS. Status: %s. Reason: %s', 'zerohold-shipping' ), $status, $reason ) );
+		// Only transition if the new status is different and we haven't reached a later stage
+		// Flow: any -> initiated -> transit -> delivered
+		$stages = [ 'rto-initiated' => 1, 'rto-transit' => 2, 'rto-delivered' => 3 ];
+		
+		$current_stage = isset( $stages[ $current_status ] ) ? $stages[ $current_status ] : 0;
+		$target_stage  = isset( $stages[ str_replace( 'wc-', '', $target_status ) ] ) ? $stages[ str_replace( 'wc-', '', $target_status ) ] : 0;
+
+		if ( $target_stage > $current_stage ) {
+			$order->update_status( $target_status, sprintf( __( 'RTO Stage Update by ZSS. Status: %s. Reason: %s', 'zerohold-shipping' ), $status, $reason ) );
 			
 			update_post_meta( $order_id, '_zh_rto_reason', $reason );
 			update_post_meta( $order_id, '_zh_rto_date', current_time( 'mysql' ) );
 			
-			// Notification for Admin could be added here
-			error_log( "ZSS RTO ALERT: Order #{$order_id} is in RTO. Reason: {$reason}" );
+			error_log( "ZSS RTO ALERT: Order #{$order_id} moved to {$target_status}. Reason: {$reason}" );
 		}
 	}
 }
