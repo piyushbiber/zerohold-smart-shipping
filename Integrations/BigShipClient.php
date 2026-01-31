@@ -108,20 +108,31 @@ class BigShipClient {
 			$url = add_query_arg( $query_args, $url );
 		}
 
+		$headers = [
+			'Content-Type'  => 'application/json',
+			'Authorization' => 'Bearer ' . $token,
+		];
+		$body = wp_json_encode( $data );
+
+		error_log( "ZSS BigShip REQ [POST]: {$url}" );
+		error_log( "ZSS BigShip PAYLOAD: {$body}" );
+
 		$response = wp_remote_post( $url, [
-			'headers' => [
-				'Content-Type'  => 'application/json',
-				'Authorization' => 'Bearer ' . $token,
-			],
-			'body'    => wp_json_encode( $data ),
+			'headers' => $headers,
+			'body'    => $body,
 			'timeout' => 30,
 		] );
 
 		if ( is_wp_error( $response ) ) {
+			error_log( "ZSS BigShip WP_ERROR: " . $response->get_error_message() );
 			return $response;
 		}
 
 		$body = wp_remote_retrieve_body( $response );
+		$code = wp_remote_retrieve_response_code( $response );
+		
+		error_log( "ZSS BigShip RES [{$code}]: {$body}" );
+
 		return json_decode( $body, true );
 	}
 
@@ -141,19 +152,28 @@ class BigShipClient {
 			$url = add_query_arg( $query_args, $url );
 		}
 
+		$headers = [
+			'Content-Type'  => 'application/json',
+			'Authorization' => 'Bearer ' . $token,
+		];
+
+		error_log( "ZSS BigShip REQ [GET]: {$url}" );
+
 		$response = wp_remote_get( $url, [
-			'headers' => [
-				'Content-Type'  => 'application/json',
-				'Authorization' => 'Bearer ' . $token,
-			],
+			'headers' => $headers,
 			'timeout' => 30,
 		] );
 
 		if ( is_wp_error( $response ) ) {
+			error_log( "ZSS BigShip WP_ERROR: " . $response->get_error_message() );
 			return $response;
 		}
 
 		$body = wp_remote_retrieve_body( $response );
+		$code = wp_remote_retrieve_response_code( $response );
+		
+		error_log( "ZSS BigShip RES [{$code}]: {$body}" );
+
 		return json_decode( $body, true );
 	}
 	/**
