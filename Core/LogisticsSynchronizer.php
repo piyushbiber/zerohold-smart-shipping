@@ -258,7 +258,41 @@ class LogisticsSynchronizer {
 		update_post_meta( $order_id, '_zh_logistics_status', $status_label );
 		update_post_meta( $order_id, '_zh_last_logistics_sync', time() );
 
-		// 2. Handle RTO Logic Transitions
+		// 2. Handle Successful Delivery - Auto Complete Order
+		if ( ! $target_rto_status ) {
+			// Not an RTO/failed delivery, check if it's a successful delivery
+			$delivered_keywords = [ 'delivered', 'delivery completed', 'shipment delivered' ];
+			$is_delivered = false;
+			
+			foreach ( $delivered_keywords as $keyword ) {
+				if ( stripos( $status_label, $keyword ) !== false ) {
+					$is_delivered = true;
+					break;
+				}
+			}
+			
+			// For Shiprocket, also check shipment_status code
+			if ( ! $is_delivered && $platform === 'shiprocket' ) {
+				$data = $tracking['tracking_data'] ?? $tracking['data'] ?? [];
+				$shipment_status = (int) ( $data['shipment_status'] ?? 0 );
+				// Shiprocket status code 7 = Delivered
+				if ( $shipment_status === 7 ) {
+					$is_delivered = true;
+				}
+			}
+			
+			if ( $is_delivered ) {
+				$current_order_status = $order->get_status();
+				
+				// Only auto-complete if order is not already completed or cancelled
+				if ( ! in_array( $current_order_status, [ 'completed', 'cancelled', 'refunded', 'failed' ], true ) ) {
+					error_log( "ZSS: Auto-completing Order #{$order_id} - Delivery confirmed by {$platform}: {$status_label}" );
+					$order->update_status( 'completed', sprintf( __( 'Order auto-completed by ZSS. Delivery confirmed by %s: %s', 'zerohold-shipping' ), $platform, $status_label ) );
+				}
+			}
+		}
+
+		// 3. Handle RTO Logic Transitions
 		if ( $target_rto_status ) {
 			$this->handle_rto_detection( $order, $status_label, $rto_reason, $target_rto_status );
 		}
