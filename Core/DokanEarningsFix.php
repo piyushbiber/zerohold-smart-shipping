@@ -16,6 +16,10 @@ class DokanEarningsFix {
 
 	public function __construct() {
 		add_filter( 'dokan_shipping_fee_recipient', [ $this, 'route_shipping_to_admin' ], 20, 2 );
+		
+		// PHASE 1: Disabled earnings interference - Let Dokan handle natively
+		// PHASE 2: Will re-enable with custom commission logic
+		/*
 		add_filter( 'woocommerce_get_formatted_order_total', [ $this, 'filter_vendor_order_total' ], 20, 4 );
 		
 		// 🛡️ PRIMARY: Intercept earnings with ULTRA-HIGH priority (Overrides Dokan's internal table values)
@@ -28,6 +32,7 @@ class DokanEarningsFix {
 		add_filter( 'dokan_order_admin_commission', [ $this, 'reinforce_admin_commission' ], 20, 3 );
 		add_filter( 'dokan_order_net_amount', [ $this, 'filter_net_amount' ], 20, 2 );
 		add_filter( 'dokan_orders_vendor_net_amount', [ $this, 'filter_net_amount_vendor' ], 20, 5 );
+		*/
 	}
 
 	/**

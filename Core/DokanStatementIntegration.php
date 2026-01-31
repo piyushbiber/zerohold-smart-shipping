@@ -75,9 +75,10 @@ class DokanStatementIntegration {
 
 		error_log( "ZSS: Found " . count($shipping_orders) . " shipping charges" );
 
-		// STEP 2.5: "GROSS UP" Logic (Prevent Double Deduction)
-		// Since we now "Mirror" forward shipping into the WC Order (via Line Item), Dokan natively deducts it from the Order Earnings row.
-		// To show a separate "Shipping" row WITHOUT double-deducting, we must add the cost BACK to the Order Row first.
+		// STEP 2.5: "GROSS UP" Logic - DISABLED FOR PHASE 1
+		// Phase 1: Let Dokan handle earnings natively without ZeroHold interference
+		// Phase 2: Will implement custom commission UI and logic
+		/*
 		foreach ( $filtered_entries as &$dokan_entry ) {
 			if ( $dokan_entry['trn_type'] === 'dokan_orders' ) {
 				$order_id = (int) $dokan_entry['trn_id'];
@@ -94,6 +95,7 @@ class DokanStatementIntegration {
 			}
 		}
 		unset( $dokan_entry ); // Break reference
+		*/
 		
 		// STEP 3: Handle REJECTION PENALTIES (Following Shipping Pattern)
 		// Query rejection penalties from order meta (like shipping charges)
