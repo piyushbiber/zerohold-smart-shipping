@@ -69,6 +69,15 @@ class CommissionManager {
 		update_post_meta( $order_id, '_zh_commission_amount', $commission_amount );
 		update_post_meta( $order_id, '_zh_commission_rate', $commission_rate );
 
+		// Fire action for ZeroHold Finance plugin
+		do_action( 'zerohold_commission_charged', [
+			'vendor_id'         => $vendor_id,
+			'order_id'          => $order_id,
+			'commission_amount' => $commission_amount,
+			'commission_rate'   => $commission_rate,
+			'product_total'     => $product_total
+		] );
+
 		error_log( "ZSS: Commission deducted successfully for Order #{$order_id}" );
 	}
 
