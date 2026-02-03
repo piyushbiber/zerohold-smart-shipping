@@ -259,6 +259,8 @@ class VendorShippingOrchestrator {
 			update_post_meta( $order_id, '_zh_retailer_cap_amount', $retailer_cap );
 			
 			// Fire action for ZeroHold Finance plugin to deduct from vendor ledger
+			error_log( "ZSS: Firing zerohold_shipping_label_charged action for Order #{$order_id}, Vendor #{$vendor_id}, Amount: ₹{$vendor_share_final}" );
+			
 			do_action( 'zerohold_shipping_label_charged', [
 				'order_id'      => $order_id,
 				'vendor_id'     => $vendor_id,
