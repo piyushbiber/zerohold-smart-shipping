@@ -258,6 +258,17 @@ class VendorShippingOrchestrator {
 			$retailer_cap   = max( 0, $retailer_price - $retailer_share );
 			update_post_meta( $order_id, '_zh_retailer_cap_amount', $retailer_cap );
 			
+			// Fire action for ZeroHold Finance plugin to deduct from vendor ledger
+			do_action( 'zerohold_shipping_label_charged', [
+				'order_id'      => $order_id,
+				'vendor_id'     => $vendor_id,
+				'buyer_id'      => $order->get_customer_id() ?: 0,
+				'cost_actual'   => $total_cost,
+				'charge_buyer'  => 0, // Buyer already paid via order total
+				'charge_vendor' => $vendor_share_final,
+				'label_id'      => get_post_meta( $order_id, '_zh_shiprocket_shipment_id', true )
+			] );
+			
 			// Note: Wallet deduction is handled by DokanStatementIntegration reading _zh_shipping_cost
 		}
 	}
