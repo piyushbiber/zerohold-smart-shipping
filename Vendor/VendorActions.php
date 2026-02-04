@@ -165,13 +165,19 @@ class VendorActions {
 		// Update meta
 		update_post_meta( $order_id, '_zh_return_handover_confirmed', 1 );
 
+		// Core Logic: Update WooCommerce Order Status to "Return Delivered"
+		$order = wc_get_order( $order_id );
+		if ( $order ) {
+			$order->update_status( 'return-delivered', 'Vendor confirmed return received at warehouse.' );
+		}
+
 		// Track Event
 		\Zerohold\Shipping\Core\DokanShipmentSync::add_return_update( 
 			$order_id, 
 			'handover' 
 		);
 
-		wp_send_json_success( 'Handover confirmed successfully' );
+		wp_send_json_success( 'Return accepted and status updated to Return Delivered' );
 	}
 
 	/**

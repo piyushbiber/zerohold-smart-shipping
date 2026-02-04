@@ -30,6 +30,7 @@ class DokanStatusSync {
 			'rto-initiated'    => __( 'RTO Initiated', 'zerohold-shipping' ),
 			'rto-transit'      => __( 'RTO In Transit', 'zerohold-shipping' ),
 			'rto-delivered'    => __( 'RTO Delivered', 'zerohold-shipping' ),
+			'return-delivered' => __( 'Return Delivered', 'zerohold-shipping' ),
 		];
 
 		// 1. Register with WooCommerce Core
@@ -128,6 +129,9 @@ class DokanStatusSync {
 
 			.dokan-dashboard .dokan-orders-content .status-rto-delivered,
 			.dokan-dashboard .dokan-orders-content .rto-delivered { background-color: #f9fafb !important; color: #111827 !important; border: 1px solid #d1d5db !important; padding: 2px 8px; border-radius: 4px; font-weight: 600; display: inline-block; white-space: nowrap; }
+
+			.dokan-dashboard .dokan-orders-content .status-return-delivered,
+			.dokan-dashboard .dokan-orders-content .return-delivered { background-color: #dcfce7 !important; color: #166534 !important; border: 1px solid #86efac !important; padding: 2px 8px; border-radius: 4px; font-weight: 600; display: inline-block; white-space: nowrap; }
 			
 			/* Fallback for empty badges */
 			.dokan-dashboard .dokan-orders-content .dokan-label:empty::before { content: "Unknown Status"; color: #999; font-style: italic; }
