@@ -25,12 +25,17 @@ class LogisticsSynchronizer {
 		// 1. Fetch Orders Needing Sync
 		// Criteria: Status not terminal, Created last 30 days, has platform and AWB
 		$args = [
-			'status'     => [ 'processing', 'on-hold', 'rto-initiated' ],
+			'status'     => [ 'processing', 'on-hold', 'rto-initiated', 'rto-transit' ],
 			'limit'      => -1,
 			'date_after' => date( 'Y-m-d', strtotime( '-30 days' ) ),
 			'meta_query' => [
+				'relation' => 'OR',
 				[
 					'key'     => '_zh_shipping_platform',
+					'compare' => 'EXISTS',
+				],
+				[
+					'key'     => '_zh_return_awb',
 					'compare' => 'EXISTS',
 				]
 			],
@@ -49,10 +54,15 @@ class LogisticsSynchronizer {
 
 		foreach ( $orders as $order ) {
 			$order_id = $order->get_id();
-			$platform = $order->get_meta( '_zh_shipping_platform' );
-			$awb      = $order->get_meta( '_zh_shiprocket_awb' ) ?: $order->get_meta( '_zh_awb' );
-
+			$platform = $order->get_meta( '_zh_shipping_platform' ) ?: $order->get_meta( '_zh_return_platform' );
+			
+			// Detect Priority: Return AWB first if in return flow
+			$awb = $order->get_meta( '_zh_return_awb' );
 			if ( ! $awb ) {
+				$awb = $order->get_meta( '_zh_shiprocket_awb' ) ?: $order->get_meta( '_zh_awb' );
+			}
+
+			if ( ! $awb || ! $platform ) {
 				continue;
 			}
 
@@ -144,12 +154,12 @@ class LogisticsSynchronizer {
 			return [ 'success' => false, 'message' => 'Invalid order.' ];
 		}
 
-		$platform = get_post_meta( $order_id, '_zh_shipping_platform', true );
+		$platform = get_post_meta( $order_id, '_zh_return_platform', true ) ?: get_post_meta( $order_id, '_zh_shipping_platform', true );
 		if ( ! $platform ) {
 			return [ 'success' => false, 'message' => 'No shipping platform associated with this order.' ];
 		}
 
-		$awb = get_post_meta( $order_id, '_zh_shiprocket_awb', true ) ?: get_post_meta( $order_id, '_zh_awb', true );
+		$awb = get_post_meta( $order_id, '_zh_return_awb', true ) ?: ( get_post_meta( $order_id, '_zh_shiprocket_awb', true ) ?: get_post_meta( $order_id, '_zh_awb', true ) );
 		if ( ! $awb ) {
 			return [ 'success' => false, 'message' => 'No AWB found for this order.' ];
 		}
@@ -284,8 +294,24 @@ class LogisticsSynchronizer {
 			if ( $is_delivered ) {
 				$current_order_status = $order->get_status();
 				
-				// Only auto-complete if order is not already completed or cancelled
-				if ( ! in_array( $current_order_status, [ 'completed', 'cancelled', 'refunded', 'failed' ], true ) ) {
+				// Handle Return Flow vs Normal Flow
+				$return_awb = $order->get_meta( '_zh_return_awb' );
+				$current_awb = '';
+				
+				if ( $platform === 'shiprocket' ) {
+					$current_awb = $tracking['tracking_data']['shipment_track'][0]['awb_code'] ?? '';
+				} else {
+					$current_awb = $tracking['data']['order_detail']['awb_no'] ?? '';
+				}
+
+				if ( $return_awb && $current_awb === $return_awb ) {
+					// 🚀 Automate Return Transition
+					if ( $current_order_status !== 'return-delivered' ) {
+						error_log( "ZSS: Auto-transitioning Order #{$order_id} to Return Delivered - Tracking confirmed by {$platform}" );
+						$order->update_status( 'return-delivered', sprintf( __( 'Return automatically confirmed by ZSS. Delivery to vendor confirmed by %s: %s', 'zerohold-shipping' ), $platform, $status_label ) );
+					}
+				} elseif ( ! in_array( $current_order_status, [ 'completed', 'cancelled', 'refunded', 'failed', 'return-delivered' ], true ) ) {
+					// Normal delivery auto-completion
 					error_log( "ZSS: Auto-completing Order #{$order_id} - Delivery confirmed by {$platform}: {$status_label}" );
 					$order->update_status( 'completed', sprintf( __( 'Order auto-completed by ZSS. Delivery confirmed by %s: %s', 'zerohold-shipping' ), $platform, $status_label ) );
 				}

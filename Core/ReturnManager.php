@@ -215,6 +215,7 @@ class ReturnManager {
 			
 			// Store 100% of cost for the full deduction logic in Phase 29
 			update_post_meta( $order_id, '_zh_return_shipping_total_actual', $total_cost );
+			error_log( "ZSS DEBUG: Storing _zh_return_shipping_total_actual = ₹{$total_cost} for Order #{$order_id}" );
 			
 			// Maintain legacy 50% share meta for backward compatibility if needed by other components
 			$vendor_share = $total_cost / 2;

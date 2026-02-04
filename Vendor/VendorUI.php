@@ -65,7 +65,7 @@ class VendorUI {
 				];
 			}
 
-			// Add "CONFIRM HANDOVER" or "RETURN DELIVERED" for return shipments
+			// Return shipment badges (Auto-controlled via LogisticsSynchronizer)
 			$return_ship_id = get_post_meta( $order_id, '_zh_return_shipment_id', true );
 			if ( $return_ship_id ) {
 				if ( $status === 'return-delivered' ) {
@@ -74,13 +74,6 @@ class VendorUI {
 						'name'   => __( 'Return Delivered', 'zerohold-shipping' ),
 						'action' => 'handover-done',
 						'icon'   => '<span class="zss-handover-done zss-status-badge" style="background:#27ae60!important; color:white!important; border:0!important;">✓ RETURN DELIVERED</span>',
-					];
-				} else {
-					$actions['confirm_handover'] = [
-						'url'    => '#',
-						'name'   => __( 'Confirm Handover', 'zerohold-shipping' ),
-						'action' => 'confirm-handover',
-						'icon'   => '<span class="zss-confirm-handover zss-action-btn" style="background:#e67e22!important; color:white!important; border:0!important;">CONFIRM HANDOVER</span>',
 					];
 				}
 			}

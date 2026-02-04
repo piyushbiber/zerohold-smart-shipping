@@ -18,19 +18,14 @@ class VendorActions {
 		add_action( 'admin_post_zh_track_shipment', [ $this, 'zh_track_shipment' ] );
 		add_action( 'admin_post_nopriv_zh_track_shipment', [ $this, 'zh_track_shipment' ] );
 
-		// Step 2.6.4: Register AJAX handler
+		// AJAX handlers
 		add_action( 'wp_ajax_zh_generate_label', [ $this, 'zh_handle_generate_label_ajax' ] );
 		add_action( 'wp_ajax_zh_get_on_demand_rates', [ $this, 'zh_get_on_demand_rates' ] );
-		add_action( 'wp_ajax_zh_confirm_return_handover', [ $this, 'zh_confirm_return_handover' ] );
 		
 		// Step 2.6.5: Register download handler
 		add_action( 'admin_post_zh_download_label', [ $this, 'zh_download_label' ] );
 		add_action( 'admin_post_zh_download_return_label', [ $this, 'zh_download_return_label' ] );
 		add_action( 'admin_post_nopriv_zh_download_return_label', [ $this, 'zh_download_return_label' ] );
-
-		// Tracking Proxy Handler
-		add_action( 'admin_post_zh_track_shipment', [ $this, 'zh_track_shipment' ] );
-		add_action( 'admin_post_nopriv_zh_track_shipment', [ $this, 'zh_track_shipment' ] );
 
 		// Hook: Flag vendor for warehouse refresh on profile update
 		add_action( 'dokan_store_profile_saved', [ '\Zerohold\Shipping\Core\WarehouseManager', 'flagVendorForRefresh' ] );
@@ -148,36 +143,6 @@ class VendorActions {
 		// Redirect to actual label
 		wp_redirect( $label_url );
 		exit;
-	}
-
-	/**
-	 * AJAX Handler for manual Return Handover confirmation by Vendor.
-	 */
-	public function zh_confirm_return_handover() {
-		check_ajax_referer( 'zh_order_action_nonce', 'security' );
-
-		if ( empty( $_POST['order_id'] ) ) {
-			wp_send_json_error( 'Missing Order ID' );
-		}
-
-		$order_id = intval( $_POST['order_id'] );
-		
-		// Update meta
-		update_post_meta( $order_id, '_zh_return_handover_confirmed', 1 );
-
-		// Core Logic: Update WooCommerce Order Status to "Return Delivered"
-		$order = wc_get_order( $order_id );
-		if ( $order ) {
-			$order->update_status( 'return-delivered', 'Vendor confirmed return received at warehouse.' );
-		}
-
-		// Track Event
-		\Zerohold\Shipping\Core\DokanShipmentSync::add_return_update( 
-			$order_id, 
-			'handover' 
-		);
-
-		wp_send_json_success( 'Return accepted and status updated to Return Delivered' );
 	}
 
 	/**
